@@ -3162,13 +3162,16 @@
     const report = (phase) => {
       if (typeof onProgress === "function") onProgress(`${phase}（已识别 ${recognizedCount()} 个分片）`);
     };
-    const registerChunk = (parsed) => {
+    const registerChunk = (parsed, yHint = null) => {
       const key = chunkGroupKey(parsed);
-      if (!byGroup.has(key)) byGroup.set(key, { total: parsed.total, indices: new Set(), texts: new Set() });
+      if (!byGroup.has(key)) byGroup.set(key, { total: parsed.total, indices: new Set(), texts: new Set(), positions: new Map() });
       const group = byGroup.get(key);
       if (!group.texts.has(parsed.text)) {
         group.texts.add(parsed.text);
         group.indices.add(parsed.index);
+        if (Number.isFinite(yHint) && !group.positions.has(parsed.index)) {
+          group.positions.set(parsed.index, Number(yHint));
+        }
       }
       if (group.indices.size >= group.total) completeGroupKey = key;
     };
@@ -3190,14 +3193,29 @@
       });
       return best ? { key: bestKey, group: best } : null;
     };
-    const tryRegisterDecodedText = (rawText) => {
+    const tryRegisterDecodedText = (rawText, yHint = null) => {
       if (!rawText || typeof rawText !== "string") return;
       if (!rawText.includes(`${MAGIC}|`)) return;
       const text = normalizeQrChunkText(rawText);
       if (!text || found.has(text)) return;
       found.add(text);
       const parsed = parseQrChunkText(text);
-      if (parsed) registerChunk(parsed);
+      if (parsed) registerChunk(parsed, yHint);
+    };
+    const barcodeDetector = (() => {
+      try {
+        if (typeof window.BarcodeDetector === "function") {
+          return new window.BarcodeDetector({ formats: ["qr_code"] });
+        }
+      } catch (_) {}
+      return null;
+    })();
+    const tryDetectByBarcodeDetector = async (sourceCanvas, yHint = null) => {
+      if (!barcodeDetector || !sourceCanvas) return;
+      try {
+        const codes = await barcodeDetector.detect(sourceCanvas);
+        (codes || []).forEach((c) => tryRegisterDecodedText(c.rawValue || "", yHint));
+      } catch (_) {}
     };
     const decodeSquare = (x, y, size) => {
       if (size <= 16) return;
@@ -3208,7 +3226,7 @@
       if (sw <= 16 || sh <= 16) return;
       const imgData = ctx.getImageData(sx, sy, sw, sh);
       const decoded = window.jsQR(imgData.data, sw, sh, { inversionAttempts: "attemptBoth" });
-      if (decoded && decoded.data) tryRegisterDecodedText(decoded.data);
+      if (decoded && decoded.data) tryRegisterDecodedText(decoded.data, sy);
     };
 
     const w = canvas.width;
@@ -3230,6 +3248,61 @@
       const cropSize = Math.min(cropWidth, h - qrTop);
       if (cropSize <= 16) return;
       decodeSquare(safeLeft, qrTop, cropSize);
+    };
+    const tryDecodeAtTopRobust = (qrTop, xAdjust = 0) => {
+      if (cropWidth <= 16) return;
+      if (qrTop < 0 || qrTop >= h) return;
+      const left = Math.max(0, Math.min(w - 1, safeLeft + xAdjust));
+      const cropSize = Math.min(cropWidth, w - left, h - qrTop);
+      if (cropSize <= 16) return;
+
+      // raw
+      decodeSquare(left, qrTop, cropSize);
+      if (completeGroupKey) return;
+
+      const sx = Math.floor(left);
+      const sy = Math.floor(qrTop);
+      const sw = Math.floor(cropSize);
+      const sh = Math.floor(cropSize);
+      if (sw <= 16 || sh <= 16) return;
+      const src = ctx.getImageData(sx, sy, sw, sh);
+
+      // thresholded variants
+      const thresholds = [96, 128, 160, 184];
+      for (const t of thresholds) {
+        const data = new Uint8ClampedArray(src.data);
+        for (let i = 0; i < data.length; i += 4) {
+          const gray = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+          const v = gray >= t ? 255 : 0;
+          data[i] = v;
+          data[i + 1] = v;
+          data[i + 2] = v;
+          data[i + 3] = 255;
+        }
+        const decoded = window.jsQR(data, sw, sh, { inversionAttempts: "attemptBoth" });
+        if (decoded && decoded.data) {
+          tryRegisterDecodedText(decoded.data);
+          if (completeGroupKey) return;
+        }
+      }
+
+      // 2x upscale retry
+      const up = document.createElement("canvas");
+      up.width = sw * 2;
+      up.height = sh * 2;
+      const upCtx = up.getContext("2d", { willReadFrequently: true });
+      upCtx.imageSmoothingEnabled = false;
+      const tmp = document.createElement("canvas");
+      tmp.width = sw;
+      tmp.height = sh;
+      const tmpCtx = tmp.getContext("2d", { willReadFrequently: true });
+      tmpCtx.putImageData(src, 0, 0);
+      upCtx.drawImage(tmp, 0, 0, up.width, up.height);
+      const upData = upCtx.getImageData(0, 0, up.width, up.height);
+      const upDecoded = window.jsQR(upData.data, up.width, up.height, { inversionAttempts: "attemptBoth" });
+      if (upDecoded && upDecoded.data) {
+        tryRegisterDecodedText(upDecoded.data);
+      }
     };
 
     report("正在识别整图");
@@ -3340,6 +3413,84 @@
           if (timeExceeded() || completeGroupKey) break;
         }
         if (timeExceeded() || completeGroupKey) break;
+      }
+    }
+
+    // Phase 5: targeted robust decode for missing indices in the best group.
+    if (!completeGroupKey && !timeExceeded()) {
+      const best = bestGroupInfo();
+      if (best && best.group.total > 1 && best.group.total <= 16) {
+        report("正在执行缺失分片精确补扫");
+        const previewHeight = Math.max(0, h - best.group.total * pageHeight);
+        const yBase = previewHeight + scaledPadding;
+        const yOffsets = [0, Math.round(scaledPadding * 0.5), -Math.round(scaledPadding * 0.5), scaledPadding, -scaledPadding];
+        const xOffsets = [0, Math.round(scaledPadding * 0.3), -Math.round(scaledPadding * 0.3), Math.round(scaledPadding * 0.7), -Math.round(scaledPadding * 0.7)];
+        const missing = [];
+        for (let idx = 1; idx <= best.group.total; idx++) {
+          if (!best.group.indices.has(idx)) missing.push(idx);
+        }
+
+        let fittedFirstIndex = null;
+        let fittedFirstY = null;
+        let fittedStep = null;
+        const posEntries = Array.from(best.group.positions.entries()).sort((a, b) => a[0] - b[0]);
+        if (posEntries.length >= 2) {
+          const first = posEntries[0];
+          const last = posEntries[posEntries.length - 1];
+          const deltaIndex = last[0] - first[0];
+          if (deltaIndex > 0) {
+            fittedFirstIndex = first[0];
+            fittedFirstY = first[1];
+            fittedStep = (last[1] - first[1]) / deltaIndex;
+          }
+        }
+
+        for (const idx of missing) {
+          const expectedY = (fittedStep != null && fittedFirstIndex != null && fittedFirstY != null)
+            ? Math.round(fittedFirstY + (idx - fittedFirstIndex) * fittedStep)
+            : (yBase + (idx - 1) * pageHeight);
+          for (const yo of yOffsets) {
+            for (const xo of xOffsets) {
+              tryDecodeAtTopRobust(expectedY + yo, xo);
+              scanCount++;
+              if (completeGroupKey) return Array.from(byGroup.get(completeGroupKey).texts);
+              if (scanCount % 8 === 0) {
+                await yieldFrame();
+                if (timeExceeded()) break;
+              }
+            }
+            if (timeExceeded() || completeGroupKey) break;
+          }
+          if (timeExceeded() || completeGroupKey) break;
+        }
+      }
+    }
+
+    // Phase 6: BarcodeDetector fallback on page slices.
+    if (!completeGroupKey && !timeExceeded() && barcodeDetector) {
+      report("正在执行原生多码补扫");
+      const pageCanvas = document.createElement("canvas");
+      pageCanvas.width = w;
+      pageCanvas.height = Math.min(h, Math.max(64, Math.round(pageHeight)));
+      const pctx = pageCanvas.getContext("2d", { willReadFrequently: true });
+      const pages = Math.max(1, Math.ceil(h / pageHeight) + 1);
+      for (let i = 0; i < pages; i++) {
+        const y = Math.max(0, Math.round(i * pageHeight));
+        const sh = Math.min(pageCanvas.height, h - y);
+        if (sh <= 24) break;
+        if (pageCanvas.height !== sh) pageCanvas.height = sh;
+        pctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+        pctx.drawImage(canvas, 0, y, w, sh, 0, 0, w, sh);
+        await tryDetectByBarcodeDetector(pageCanvas, y);
+        if (completeGroupKey) return Array.from(byGroup.get(completeGroupKey).texts);
+        if (i % 2 === 1) {
+          await yieldFrame();
+          if (timeExceeded()) break;
+        }
+      }
+      if (!completeGroupKey) {
+        await tryDetectByBarcodeDetector(canvas, 0);
+        if (completeGroupKey) return Array.from(byGroup.get(completeGroupKey).texts);
       }
     }
 
