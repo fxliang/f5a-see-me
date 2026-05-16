@@ -158,6 +158,7 @@
     suppressLayoutJsonInput: false,
     wasmReady: false,
     qr: { chunks: [], index: 0, transferId: "" },
+    qrImportRunning: false,
     dragKey: null,
     dragRow: null,
     dragRowNode: null,
@@ -3070,6 +3071,384 @@
     downloadBlob(fileName, blob);
   }
 
+  function parseQrChunkText(raw) {
+    const text = String(raw || "").trim();
+    const parts = text.split("|");
+    if (parts.length < 5 || parts[0] !== MAGIC) return null;
+    const transferId = parts[1] || "";
+    const seq = parts[2] || "";
+    const crcText = parts[3] || "";
+    const payload = parts.slice(4).join("|");
+    const slash = seq.indexOf("/");
+    if (slash <= 0) return null;
+    const index = Number(seq.slice(0, slash));
+    const total = Number(seq.slice(slash + 1));
+    const crc = Number(crcText);
+    if (!/^L[0-9a-f]{11}(?:~[A-Za-z0-9_-]+)?$/.test(transferId)) return null;
+    if (!Number.isInteger(index) || !Number.isInteger(total) || index < 1 || total < 1 || index > total) return null;
+    if (!Number.isInteger(crc) || crc < 0) return null;
+    if (total > 512) return null;
+    if (!payload) return null;
+    if (!/^[A-Za-z0-9_-]+$/.test(payload)) return null;
+    let payloadBytesLength = -1;
+    try {
+      payloadBytesLength = base64UrlToBytes(payload).length;
+    } catch (_) {
+      return null;
+    }
+    if (payloadBytesLength <= 0 || payloadBytesLength > MAX_CHUNK_BYTES) return null;
+    return { transferId, index, total, crc, payload, text };
+  }
+
+  function normalizeQrChunkText(raw) {
+    const text = String(raw || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+    const idx = text.indexOf(`${MAGIC}|`);
+    if (idx < 0) return "";
+    const tail = text.slice(idx);
+    // Keep the first token-like segment that starts with MAGIC.
+    const token = tail.split(/\s+/)[0] || "";
+    // Drop trailing non-base64url noise after payload.
+    const parts = token.split("|");
+    if (parts.length < 5) return token;
+    const payload = parts.slice(4).join("|").replace(/[^A-Za-z0-9_-].*$/, "");
+    return [parts[0], parts[1], parts[2], parts[3], payload].join("|");
+  }
+
+  function chunkGroupKey(chunk) {
+    return `${chunk.transferId}|${chunk.crc}|${chunk.total}`;
+  }
+
+  function readFileAsImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(img);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("图片读取失败"));
+      };
+      img.src = url;
+    });
+  }
+
+  async function decodeQrTextFromImage(image, onProgress) {
+    if (typeof window.jsQR !== "function") throw new Error("jsQR 未加载");
+    const canvas = document.createElement("canvas");
+    const srcW = image.naturalWidth || image.width;
+    const srcH = image.naturalHeight || image.height;
+    const maxScanWidth = 1600;
+    const scaleDown = srcW > maxScanWidth ? maxScanWidth / srcW : 1;
+    canvas.width = Math.max(1, Math.round(srcW * scaleDown));
+    canvas.height = Math.max(1, Math.round(srcH * scaleDown));
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const found = new Set();
+    const byGroup = new Map();
+    let completeGroupKey = null;
+    const yieldFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    const startedAt = performance.now();
+    const scanTimeBudgetMs = 7000;
+    let scanCount = 0;
+
+    const recognizedCount = () => {
+      let count = 0;
+      byGroup.forEach((g) => { count += g.texts.size; });
+      return count;
+    };
+    const report = (phase) => {
+      if (typeof onProgress === "function") onProgress(`${phase}（已识别 ${recognizedCount()} 个分片）`);
+    };
+    const registerChunk = (parsed) => {
+      const key = chunkGroupKey(parsed);
+      if (!byGroup.has(key)) byGroup.set(key, { total: parsed.total, indices: new Set(), texts: new Set() });
+      const group = byGroup.get(key);
+      if (!group.texts.has(parsed.text)) {
+        group.texts.add(parsed.text);
+        group.indices.add(parsed.index);
+      }
+      if (group.indices.size >= group.total) completeGroupKey = key;
+    };
+    const bestGroupInfo = () => {
+      let bestKey = null;
+      let best = null;
+      byGroup.forEach((group, key) => {
+        if (!best) {
+          best = group;
+          bestKey = key;
+          return;
+        }
+        const bestCoverage = best.total > 0 ? best.indices.size / best.total : 0;
+        const curCoverage = group.total > 0 ? group.indices.size / group.total : 0;
+        if (curCoverage > bestCoverage || (curCoverage === bestCoverage && group.indices.size > best.indices.size)) {
+          best = group;
+          bestKey = key;
+        }
+      });
+      return best ? { key: bestKey, group: best } : null;
+    };
+    const tryRegisterDecodedText = (rawText) => {
+      if (!rawText || typeof rawText !== "string") return;
+      if (!rawText.includes(`${MAGIC}|`)) return;
+      const text = normalizeQrChunkText(rawText);
+      if (!text || found.has(text)) return;
+      found.add(text);
+      const parsed = parseQrChunkText(text);
+      if (parsed) registerChunk(parsed);
+    };
+    const decodeSquare = (x, y, size) => {
+      if (size <= 16) return;
+      const sx = Math.max(0, Math.floor(x));
+      const sy = Math.max(0, Math.floor(y));
+      const sw = Math.min(canvas.width - sx, Math.floor(size));
+      const sh = Math.min(canvas.height - sy, Math.floor(size));
+      if (sw <= 16 || sh <= 16) return;
+      const imgData = ctx.getImageData(sx, sy, sw, sh);
+      const decoded = window.jsQR(imgData.data, sw, sh, { inversionAttempts: "attemptBoth" });
+      if (decoded && decoded.data) tryRegisterDecodedText(decoded.data);
+    };
+
+    const w = canvas.width;
+    const h = canvas.height;
+    const designWidth = LONG_IMAGE_QR_SIZE + LONG_IMAGE_PAGE_PADDING * 2;
+    const scale = w / designWidth;
+    const scaledPadding = Math.max(1, Math.round(LONG_IMAGE_PAGE_PADDING * scale));
+    const scaledQrSize = Math.max(1, Math.round(LONG_IMAGE_QR_SIZE * scale));
+    const scaledTextGap = Math.max(1, Math.round(LONG_IMAGE_TEXT_GAP * scale));
+    const scaledTextSize = Math.max(1, Math.round(LONG_IMAGE_TEXT_SIZE * scale));
+    const pageHeight = scaledPadding + scaledQrSize + scaledTextGap + scaledTextSize + scaledPadding;
+    const safeLeft = Math.min(scaledPadding, Math.max(0, w - 1));
+    const cropWidth = Math.min(scaledQrSize, w - safeLeft);
+    const timeExceeded = () => (performance.now() - startedAt) > scanTimeBudgetMs;
+
+    const tryDecodeAtTop = (qrTop) => {
+      if (cropWidth <= 16) return;
+      if (qrTop < 0 || qrTop >= h) return;
+      const cropSize = Math.min(cropWidth, h - qrTop);
+      if (cropSize <= 16) return;
+      decodeSquare(safeLeft, qrTop, cropSize);
+    };
+
+    report("正在识别整图");
+    decodeSquare(0, 0, Math.min(w, h));
+    if (completeGroupKey) return Array.from(byGroup.get(completeGroupKey).texts);
+
+    report("正在定位首个分片");
+    let firstQrY = -1;
+    let scanY = 0;
+    while (firstQrY < 0 && scanY + scaledPadding + scaledQrSize <= h) {
+      const qrTop = scanY + scaledPadding;
+      tryDecodeAtTop(qrTop);
+      scanCount++;
+      if (completeGroupKey) return Array.from(byGroup.get(completeGroupKey).texts);
+      const best = bestGroupInfo();
+      if (best && best.group.indices.size > 0) firstQrY = qrTop;
+      if (scanCount % 10 === 0) {
+        report("正在定位首个分片");
+        await yieldFrame();
+      }
+      if (timeExceeded()) break;
+      if (firstQrY < 0) scanY += scaledPadding;
+    }
+
+    if (firstQrY < 0 && !timeExceeded()) {
+      const step = Math.max(24, Math.round(scaledPadding * 1.5));
+      for (let y = 0; y + cropWidth <= h; y += step) {
+        tryDecodeAtTop(y);
+        scanCount++;
+        if (completeGroupKey) return Array.from(byGroup.get(completeGroupKey).texts);
+        const best = bestGroupInfo();
+        if (best && best.group.indices.size > 0) {
+          firstQrY = y;
+          break;
+        }
+        if (scanCount % 10 === 0) {
+          report("正在扫描长图");
+          await yieldFrame();
+        }
+        if (timeExceeded()) break;
+      }
+    }
+
+    if (firstQrY >= 0 && !timeExceeded()) {
+      report("正在按分页补齐分片");
+      const tolerance = Math.max(16, Math.round(50 * scale));
+      const toleranceStep = Math.max(4, Math.floor(scaledPadding / 2));
+      let page = 1;
+      while (!timeExceeded()) {
+        const expectedY = firstQrY + page * pageHeight;
+        if (expectedY - tolerance >= h) break;
+        for (let off = -tolerance; off <= tolerance; off += toleranceStep) {
+          tryDecodeAtTop(expectedY + off);
+          scanCount++;
+          if (completeGroupKey) return Array.from(byGroup.get(completeGroupKey).texts);
+          if (scanCount % 10 === 0) {
+            report("正在按分页补齐分片");
+            await yieldFrame();
+          }
+          if (timeExceeded()) break;
+        }
+        page += 1;
+        if (page > 24) break;
+      }
+    }
+
+    if (!completeGroupKey && !timeExceeded()) {
+      report("正在执行兼容补扫");
+      const pages = Math.max(1, Math.ceil(h / pageHeight));
+      for (let i = 0; i < pages; i++) {
+        tryDecodeAtTop(i * pageHeight + scaledPadding);
+        scanCount++;
+        if (completeGroupKey) return Array.from(byGroup.get(completeGroupKey).texts);
+        if (scanCount % 10 === 0) {
+          report("正在执行兼容补扫");
+          await yieldFrame();
+        }
+        if (timeExceeded()) break;
+      }
+    }
+
+    // Phase 4: global phase fallback.
+    // Enumerate possible page-phase offsets to avoid missing the last chunk due to small first-page offset drift.
+    if (!completeGroupKey && !timeExceeded()) {
+      report("正在执行全局相位补扫");
+      const pages = Math.max(1, Math.ceil(h / pageHeight) + 1);
+      const phaseStep = Math.max(6, Math.floor(scaledPadding / 2));
+      const xOffsets = [0, Math.round(cropWidth * 0.01), -Math.round(cropWidth * 0.01)];
+      const sizeJitter = [1, 0.985, 1.01];
+      for (let phase = 0; phase < pageHeight; phase += phaseStep) {
+        for (let i = 0; i < pages; i++) {
+          const y = phase + scaledPadding + i * pageHeight;
+          if (y >= h) break;
+          for (const xo of xOffsets) {
+            for (const mul of sizeJitter) {
+              const s = Math.max(24, Math.round(cropWidth * mul));
+              const x = safeLeft + xo;
+              decodeSquare(x, y, s);
+              scanCount++;
+              if (completeGroupKey) return Array.from(byGroup.get(completeGroupKey).texts);
+              if (scanCount % 10 === 0) {
+                await yieldFrame();
+                if (timeExceeded()) break;
+              }
+            }
+            if (timeExceeded() || completeGroupKey) break;
+          }
+          if (timeExceeded() || completeGroupKey) break;
+        }
+        if (timeExceeded() || completeGroupKey) break;
+      }
+    }
+
+    const best = bestGroupInfo();
+    return best ? Array.from(best.group.texts) : [];
+  }
+
+  async function decodeLayoutFromQrChunks(chunkTexts) {
+    const parsed = chunkTexts.map(parseQrChunkText).filter(Boolean);
+    if (!parsed.length) throw new Error("未识别到有效二维码分片");
+
+    const byTransfer = new Map();
+    parsed.forEach((chunk) => {
+      const key = chunkGroupKey(chunk);
+      if (!byTransfer.has(key)) byTransfer.set(key, []);
+      byTransfer.get(key).push(chunk);
+    });
+
+    // Prefer complete candidate sets; for ties, prefer better coverage ratio, then more unique chunks.
+    let selected = null;
+    byTransfer.forEach((list) => {
+      const sample = list[0];
+      const uniqueIndex = new Set(list.map((x) => x.index)).size;
+      const complete = sample && uniqueIndex >= sample.total;
+      const total = sample ? sample.total : 0;
+      const coverage = total > 0 ? uniqueIndex / total : 0;
+      if (!selected) {
+        selected = { list, complete, uniqueIndex, total, coverage };
+        return;
+      }
+      if (complete && !selected.complete) {
+        selected = { list, complete, uniqueIndex, total, coverage };
+        return;
+      }
+      if (complete === selected.complete) {
+        if (coverage > selected.coverage) {
+          selected = { list, complete, uniqueIndex, total, coverage };
+          return;
+        }
+        if (coverage === selected.coverage && uniqueIndex > selected.uniqueIndex) {
+          selected = { list, complete, uniqueIndex, total, coverage };
+        }
+      }
+    });
+
+    if (!selected) throw new Error("二维码分片为空");
+    const chunks = selected.list;
+    const transferId = chunks[0].transferId;
+    const total = chunks[0].total;
+    const expectedCrc = chunks[0].crc;
+    const parts = new Array(total);
+
+    chunks.forEach((chunk) => {
+      if (chunk.transferId !== transferId || chunk.total !== total || chunk.crc !== expectedCrc) return;
+      if (!parts[chunk.index - 1]) parts[chunk.index - 1] = chunk;
+    });
+
+    const missing = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (!parts[i]) missing.push(i + 1);
+    }
+    if (missing.length) {
+      throw new Error(`分片不完整，缺少 ${missing.join(", ")}（已识别 ${selected.uniqueIndex}/${total}）`);
+    }
+
+    const bytesList = parts.map((chunk) => base64UrlToBytes(chunk.payload));
+    const totalLength = bytesList.reduce((sum, b) => sum + b.length, 0);
+    const compressed = new Uint8Array(totalLength);
+    let offset = 0;
+    bytesList.forEach((b) => {
+      compressed.set(b, offset);
+      offset += b.length;
+    });
+
+    if (crc32(compressed) !== expectedCrc) throw new Error("分片校验失败（CRC 不匹配）");
+
+    await ensureWasm();
+    let raw;
+    try {
+      raw = window.lzma_wasm.decompress(compressed, { format: "xz" });
+    } catch (_) {
+      raw = window.lzma_wasm.decompress(compressed);
+    }
+    const text = new TextDecoder().decode(raw);
+    const layout = normalizeLayoutObject(JSON.parse(text));
+    return { layout, transferId, total };
+  }
+
+  async function importLayoutFromQrLongImage(file) {
+    if (!file) return;
+    state.qr = { chunks: [], index: 0, transferId: "" };
+    updateQrUi();
+    setStatus("layout-qr-meta", "正在读取长图…", "");
+    const image = await readFileAsImage(file);
+    const chunkTexts = await decodeQrTextFromImage(image, (msg) => setStatus("layout-qr-meta", msg, ""));
+    if (!chunkTexts.length) throw new Error("未识别到二维码分片，请确认长图完整清晰");
+    setStatus("layout-qr-meta", "正在校验并解码分片…", "");
+    const decoded = await decodeLayoutFromQrChunks(chunkTexts);
+
+    const ok = confirm(`确认导入二维码布局？\ntransferId=${decoded.transferId}\n分片数=${decoded.total}\n当前布局将被覆盖。`);
+    if (!ok) return;
+
+    state.layout = decoded.layout;
+    ensureSelection();
+    syncLayoutUiFromState();
+    setStatus("layout-json-status", "已从二维码长图导入 JSON", "ok");
+    setStatus("layout-qr-meta", `导入成功：${decoded.total} 个分片，transferId=${decoded.transferId}`, "ok");
+  }
+
   function updateQrUi() {
     const has = state.qr.chunks.length > 0;
     el("layout-qr-index").textContent = `${has ? state.qr.index + 1 : 0} / ${state.qr.chunks.length}`;
@@ -3102,6 +3481,30 @@
         setStatus("layout-qr-meta", `已下载 PNG 长图：${bundle.total} 个分片，transferId=${bundle.transferId}`, "ok");
       } catch (e) {
         setStatus("layout-qr-meta", `长图导出失败：${e.message}`, "err");
+      }
+    });
+    el("layout-import-qr-image").addEventListener("click", () => {
+      const input = el("layout-import-qr-image-file");
+      if (!input) return;
+      input.value = "";
+      input.click();
+    });
+    el("layout-import-qr-image-file").addEventListener("change", async (ev) => {
+      const file = ev.target && ev.target.files ? ev.target.files[0] : null;
+      if (!file) return;
+      if (state.qrImportRunning) {
+        setStatus("layout-qr-meta", "已有导入任务在进行，请稍后重试", "err");
+        return;
+      }
+      state.qrImportRunning = true;
+      try {
+        await importLayoutFromQrLongImage(file);
+      } catch (e) {
+        setStatus("layout-qr-meta", `长图导入失败：${e.message}`, "err");
+      } finally {
+        state.qrImportRunning = false;
+        const input = el("layout-import-qr-image-file");
+        if (input) input.value = "";
       }
     });
     el("layout-prev-qr").addEventListener("click", () => {

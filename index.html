@@ -56,7 +56,7 @@
             </details>
 
             <details class="card">
-              <summary>二维码分享</summary>
+              <summary>二维码分享和导入</summary>
               <div>
                 <div class="form-row form-inline">
                   <label>分享布局profile名（可选）</label>
@@ -65,6 +65,8 @@
                 <div class="toolbar">
                   <button id="layout-generate-qr">生成二维码</button>
                   <button id="layout-share-qr-image">下载二维码长图</button>
+                  <button id="layout-import-qr-image">导入二维码长图</button>
+                  <input id="layout-import-qr-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
                 </div>
                 <div id="layout-qr-meta" class="status"></div>
                 <div class="qr-wrap">
@@ -306,6 +308,7 @@
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lzma-wasm@1.0.7/dist/iife/index.js"></script>
   <script src="./jscolor/jscolor.js?v=20260516-1032"></script>
   <script src="./app.js?v=20260516-1348"></script>
