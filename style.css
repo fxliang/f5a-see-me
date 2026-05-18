@@ -58,6 +58,10 @@ body {
   gap: 8px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: calc(var(--topbar-height) + var(--preview-panel-height));
+  z-index: 8;
+  background: var(--bg);
 }
 
 .tab {
@@ -250,6 +254,193 @@ input[type="checkbox"] {
   color: var(--sub);
 }
 
+.theme-color-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.theme-workbench {
+  grid-template-columns: 1.4fr 1fr;
+  align-items: start;
+}
+
+.theme-main-card {
+  min-width: 0;
+}
+
+.theme-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 8px 0 12px;
+}
+
+.theme-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: #10131b;
+  text-align: left;
+}
+
+.theme-card.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary) inset;
+}
+
+.theme-card-title {
+  font-weight: 650;
+  margin-bottom: 6px;
+}
+
+.theme-card-meta {
+  color: var(--sub);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.theme-card-preview {
+  position: relative;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-height: 92px;
+  overflow: hidden;
+  background-size: cover;
+  background-position: center;
+}
+
+.theme-card-preview::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.06);
+  pointer-events: none;
+}
+
+.theme-card-preview-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.theme-card-preview-name {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 35px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-card-preview-space {
+  position: absolute;
+  left: 22%;
+  width: 56%;
+  height: 12px;
+  bottom: 8px;
+  border-radius: 999px;
+}
+
+.theme-card-preview-return {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+}
+
+.theme-color-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: #10131b;
+}
+
+.theme-color-row > label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--sub);
+}
+
+.theme-color-inputs {
+  display: block;
+}
+
+.theme-color-input {
+  width: 100%;
+}
+
+.theme-color-picker {
+  width: 56px;
+  min-width: 56px;
+  height: 36px;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.theme-color-swatches {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.theme-color-swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  padding: 0;
+}
+
+.theme-preview-extra,
+.theme-preview-extra-side {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.theme-preview-extra-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  min-height: 30px;
+}
+
+.theme-preview-extra-item .label {
+  display: block;
+  color: var(--sub);
+  margin-bottom: 2px;
+}
+
+.theme-preview-extra-item .value {
+  display: block;
+  font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .preview-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .theme-preview-extra-side {
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+  }
+}
+
 .json-editor {
   min-height: 260px;
   resize: vertical;
@@ -430,6 +621,17 @@ input[type="checkbox"] {
   margin: 0 auto;
 }
 
+.preview-shell {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) minmax(150px, 220px);
+  gap: 10px;
+  align-items: start;
+}
+
+.preview-center {
+  min-width: 0;
+}
+
 .layout-row {
   margin-bottom: 8px;
   display: flex;
@@ -568,6 +770,18 @@ input[type="checkbox"] {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.qr-wrap-modal {
+  justify-items: center;
+}
+
+.qr-wrap-modal canvas {
+  width: min(100%, 520px);
+}
+
+.cm-editor.cm-readonly {
+  opacity: 0.9;
 }
 
 .editor-dialog {
@@ -792,6 +1006,10 @@ input[type="checkbox"] {
   .layout-workbench {
     grid-template-columns: minmax(420px, 1fr) minmax(420px, .95fr);
     align-items: stretch;
+  }
+
+  .layout-workbench.theme-workbench {
+    align-items: start;
   }
 
   .layout-workbench .card {

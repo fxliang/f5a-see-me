@@ -13,14 +13,24 @@
   </header>
 
   <main>
+    <details class="keyboard-preview-panel" open>
+      <summary>布局预览</summary>
+      <div class="preview-shell">
+        <div id="theme-preview-extra-left" class="theme-preview-extra-side"></div>
+        <div class="preview-center">
+          <div id="layout-preview" class="layout-preview"></div>
+          <div id="layout-preview-meta" class="status"></div>
+        </div>
+        <div id="theme-preview-extra-right" class="theme-preview-extra-side"></div>
+      </div>
+    </details>
+
+    <div class="tabs" role="tablist" aria-label="编辑器功能">
+      <button type="button" class="tab active" data-tab-target="tab-layout" aria-controls="tab-layout" aria-selected="true">布局编辑</button>
+      <button type="button" class="tab" data-tab-target="tab-theme" aria-controls="tab-theme" aria-selected="false">主题编辑</button>
+    </div>
+
     <section class="panel active" id="tab-layout" role="tabpanel">
-      <!-- 预览面板, 外套一个detail 框默认展开 -->
-      <details class="keyboard-preview-panel" open>
-        <summary>布局预览</summary>
-        <div id="layout-preview" class="layout-preview"></div>
-        <div id="layout-preview-meta" class="status"></div>
-      </details>
-      <!-- 编辑面板 -->
       <div class="layout-workbench">
         <div class="card layout-main-column-card" id="layout-main-column-card">
           <div class="layout-main-column">
@@ -43,6 +53,7 @@
                 <button id="layout-rename-layout">重命名布局</button>
                 <button id="layout-reset">重置示例</button>
                 <button id="layout-download-json">导出 JSON</button>
+                <button id="layout-open-theme" type="button">主题编辑</button>
                 <label class="file-button">
                   导入 JSON
                   <input id="layout-import-file" type="file" accept="application/json,.json">
@@ -88,6 +99,41 @@
           <div class="json-card-body">
             <textarea id="layout-json" class="json-editor"></textarea>
             <div class="status" id="layout-json-status"></div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-theme" role="tabpanel">
+      <div class="layout-workbench theme-workbench">
+        <details class="card theme-main-card" open>
+          <summary>主题管理与编辑</summary>
+          <div class="toolbar details-toolbar">
+            <button id="theme-create-from-current" type="button">从当前复制新建主题</button>
+            <button id="theme-rename-custom" type="button">修改当前自定义主题名称</button>
+            <button id="theme-delete-custom" type="button">删除当前自定义主题</button>
+            <button id="theme-import-background" type="button">添加/修改背景图片</button>
+            <button id="theme-clear-background" type="button">清除背景图片</button>
+            <button id="theme-export-json" type="button">导出主题 JSON</button>
+            <button id="theme-share-current" type="button">分享当前激活主题</button>
+            <button id="theme-import-shared" type="button">导入主题（长图/ZIP）</button>
+            <input id="theme-import-background-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+            <input id="theme-import-file" type="file" accept="application/zip,.zip,image/png,image/jpeg,image/webp" hidden>
+          </div>
+          <div id="theme-qr-meta" class="status"></div>
+          <div id="theme-list" class="theme-list"></div>
+          <div id="theme-color-rows" class="theme-color-rows"></div>
+          <div id="theme-editor-status" class="status"></div>
+        </details>
+
+        <details class="card json-card" id="theme-json-card" open>
+          <summary>主题 JSON</summary>
+          <div class="json-card-body">
+            <textarea id="theme-json" class="json-editor"></textarea>
+            <div class="toolbar">
+              <button id="theme-json-apply" type="button">应用 JSON 到当前主题</button>
+            </div>
+            <div id="theme-json-status" class="status"></div>
           </div>
         </details>
       </div>
@@ -308,12 +354,29 @@
     </form>
   </dialog>
 
+  <dialog id="theme-qr-dialog" class="editor-dialog sub-dialog qr-preview-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3>主题二维码预览</h3></div>
+      <div class="qr-wrap qr-wrap-modal">
+        <canvas id="theme-qr-canvas" width="640" height="640"></canvas>
+        <div class="qr-nav">
+          <button id="theme-prev-qr" type="button">上一张</button>
+          <span id="theme-qr-index">0 / 0</span>
+          <button id="theme-next-qr" type="button">下一张</button>
+          <button id="theme-download-qr-preview" type="button">下载长图</button>
+          <button id="theme-close-qr-preview" type="submit">关闭</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
   <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lzma-wasm@1.0.7/dist/iife/index.js"></script>
-  <script src="./js/qr-import.js?v=20260518-qr-import"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="./js/qr-import.js?v=20260518215754"></script>
   <script src="./js/jscolor/jscolor.js?v=20260516-1032"></script>
-  <script src="./js/key-editor-bindings.js?v=20260518-key-bindings"></script>
-  <script src="./js/app.js?v=20260516-1348"></script>
+  <script src="./js/key-editor-bindings.js?v=20260518215754"></script>
+  <script src="./js/app.js?v=20260518224603"></script>
 </body>
 </html>

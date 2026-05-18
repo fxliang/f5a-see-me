@@ -1,11 +1,12 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-18T15:04+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-18T22:46+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
   const MAX_CHUNK_BYTES = 1500;
   const TRANSFER_TYPE_LAYOUT = "L";
+  const TRANSFER_TYPE_THEME = "T";
   const LONG_IMAGE_QR_SIZE = 768;
   const LONG_IMAGE_PAGE_PADDING = 24;
   const LONG_IMAGE_TEXT_SIZE = 22;
@@ -13,6 +14,7 @@
   const DEFAULT_SUBMODE = "default";
   const META_KEY = "__meta__";
   const HEIGHT_KEY = "keyboard_height_percent";
+  const PREVIEW_KEY_BORDER_ENABLED = true;
 
   const defaultLayout = {
     default: [
@@ -79,6 +81,116 @@
     "keyShadowColor", "popupBackgroundColor", "popupTextColor", "spaceBarColor", "dividerColor",
     "clipboardEntryColor", "genericActiveBackgroundColor", "genericActiveForegroundColor"
   ];
+  const themeColorLabels = {
+    backgroundColor: "背景颜色",
+    barColor: "工具栏颜色",
+    keyboardColor: "键盘底色",
+    keyBackgroundColor: "普通按键背景",
+    keyTextColor: "普通按键文字",
+    candidateTextColor: "候选文字",
+    candidateLabelColor: "候选标签",
+    candidateCommentColor: "候选注释",
+    altKeyBackgroundColor: "功能键背景",
+    altKeyTextColor: "功能键文字",
+    accentKeyBackgroundColor: "强调键背景",
+    accentKeyTextColor: "强调键文字",
+    keyPressHighlightColor: "按压高亮",
+    keyShadowColor: "按键边框/阴影",
+    popupBackgroundColor: "弹出背景",
+    popupTextColor: "弹出文字",
+    spaceBarColor: "空格键背景",
+    dividerColor: "分割线",
+    clipboardEntryColor: "剪贴板项背景",
+    genericActiveBackgroundColor: "激活态背景",
+    genericActiveForegroundColor: "激活态文字"
+  };
+  const builtinThemePresets = [
+    {
+      name: "MaterialLight",
+      colors: {
+        backgroundColor: "#FFECEFF1", barColor: "#FFE4E7E9", keyboardColor: "#FFECEFF1", keyBackgroundColor: "#FFFBFBFC", keyTextColor: "#FF37474F",
+        candidateTextColor: "#FF37474F", candidateLabelColor: "#FF37474F", candidateCommentColor: "#FF7A858A", altKeyBackgroundColor: "#FFDFE2E4", altKeyTextColor: "#FF7A858A",
+        accentKeyBackgroundColor: "#FF5CB5AB", accentKeyTextColor: "#FFFFFFFF", keyPressHighlightColor: "#1F000000", keyShadowColor: "#FFC0C3C4", popupBackgroundColor: "#FFD9DBDD",
+        popupTextColor: "#FF37474F", spaceBarColor: "#FFC9CED1", dividerColor: "#1F000000", clipboardEntryColor: "#FFFBFBFC", genericActiveBackgroundColor: "#FF80CBC4", genericActiveForegroundColor: "#FF37474F"
+      }
+    },
+    {
+      name: "MaterialDark",
+      colors: {
+        backgroundColor: "#FF263238", barColor: "#FF21272B", keyboardColor: "#FF263238", keyBackgroundColor: "#FF404A50", keyTextColor: "#FFD9DBDC",
+        candidateTextColor: "#FFD9DBDC", candidateLabelColor: "#FFD9DBDC", candidateCommentColor: "#FFADB1B3", altKeyBackgroundColor: "#FF313C42", altKeyTextColor: "#FFADB1B3",
+        accentKeyBackgroundColor: "#FF6EACA8", accentKeyTextColor: "#FFFFFFFF", keyPressHighlightColor: "#33FFFFFF", keyShadowColor: "#FF1F292E", popupBackgroundColor: "#FF3C474C",
+        popupTextColor: "#FFFFFFFF", spaceBarColor: "#FF3B464C", dividerColor: "#1FFFFFFF", clipboardEntryColor: "#FF404A50", genericActiveBackgroundColor: "#FF4DB6AC", genericActiveForegroundColor: "#FFFFFFFF"
+      }
+    },
+    {
+      name: "PixelLight",
+      colors: {
+        backgroundColor: "#FFEEEEEE", barColor: "#FFEEEEEE", keyboardColor: "#FFFAFAFA", keyBackgroundColor: "#FFFFFFFF", keyTextColor: "#FF212121",
+        candidateTextColor: "#FF212121", candidateLabelColor: "#FF212121", candidateCommentColor: "#FF6E6E6E", altKeyBackgroundColor: "#FFE1E1E1", altKeyTextColor: "#FF6E6E6E",
+        accentKeyBackgroundColor: "#FF4285F4", accentKeyTextColor: "#FFFFFFFF", keyPressHighlightColor: "#1F000000", keyShadowColor: "#FFC2C2C2", popupBackgroundColor: "#FFEEEEEE",
+        popupTextColor: "#FF212121", spaceBarColor: "#FFDBDBDB", dividerColor: "#1F000000", clipboardEntryColor: "#FFFFFFFF", genericActiveBackgroundColor: "#FF5E97F6", genericActiveForegroundColor: "#FFFFFFFF"
+      }
+    },
+    {
+      name: "PixelDark",
+      colors: {
+        backgroundColor: "#FF2D2D2D", barColor: "#FF373737", keyboardColor: "#FF2D2D2D", keyBackgroundColor: "#FF464646", keyTextColor: "#FFFAFAFA",
+        candidateTextColor: "#FFFAFAFA", candidateLabelColor: "#FFFAFAFA", candidateCommentColor: "#FFACACAC", altKeyBackgroundColor: "#FF373737", altKeyTextColor: "#FFACACAC",
+        accentKeyBackgroundColor: "#FF5E97F6", accentKeyTextColor: "#FFFFFFFF", keyPressHighlightColor: "#33FFFFFF", keyShadowColor: "#FF252525", popupBackgroundColor: "#FF373737",
+        popupTextColor: "#FFFAFAFA", spaceBarColor: "#FF4A4A4A", dividerColor: "#1FFFFFFF", clipboardEntryColor: "#FF464646", genericActiveBackgroundColor: "#FF5E97F6", genericActiveForegroundColor: "#FFFAFAFA"
+      }
+    },
+    {
+      name: "NordLight",
+      colors: {
+        backgroundColor: "#FFD8DEE9", barColor: "#FFE5E9F0", keyboardColor: "#FFECEFF4", keyBackgroundColor: "#FFECEFF4", keyTextColor: "#FF2E3440",
+        candidateTextColor: "#FF2E3440", candidateLabelColor: "#FF2E3440", candidateCommentColor: "#FF4C566A", altKeyBackgroundColor: "#FFE5E9F0", altKeyTextColor: "#FF434C5E",
+        accentKeyBackgroundColor: "#FF5E81AC", accentKeyTextColor: "#FFECEFF4", keyPressHighlightColor: "#1F000000", keyShadowColor: "#1F000000", popupBackgroundColor: "#FFE5E9F0",
+        popupTextColor: "#FF2E3440", spaceBarColor: "#FFD8DEE9", dividerColor: "#1F000000", clipboardEntryColor: "#FFECEFF4", genericActiveBackgroundColor: "#FF5E81AC", genericActiveForegroundColor: "#FFECEFF4"
+      }
+    },
+    {
+      name: "NordDark",
+      colors: {
+        backgroundColor: "#FF2E3440", barColor: "#FF434C5E", keyboardColor: "#FF2E3440", keyBackgroundColor: "#FF4C566A", keyTextColor: "#FFECEFF4",
+        candidateTextColor: "#FFECEFF4", candidateLabelColor: "#FFECEFF4", candidateCommentColor: "#FFD8DEE9", altKeyBackgroundColor: "#FF3B4252", altKeyTextColor: "#FFD8DEE9",
+        accentKeyBackgroundColor: "#FF88C0D0", accentKeyTextColor: "#FF2E3440", keyPressHighlightColor: "#33FFFFFF", keyShadowColor: "#FF434C5E", popupBackgroundColor: "#FF434C5E",
+        popupTextColor: "#FFECEFF4", spaceBarColor: "#FF4C566A", dividerColor: "#1FFFFFFF", clipboardEntryColor: "#FF4C566A", genericActiveBackgroundColor: "#FF88C0D0", genericActiveForegroundColor: "#FF2E3440"
+      }
+    },
+    {
+      name: "DeepBlue",
+      colors: {
+        backgroundColor: "#FF1565C0", barColor: "#FF0D47A1", keyboardColor: "#FF1565C0", keyBackgroundColor: "#FF3F80CB", keyTextColor: "#FFFFFFFF",
+        candidateTextColor: "#FFFFFFFF", candidateLabelColor: "#FFFFFFFF", candidateCommentColor: "#FFA9C6E7", altKeyBackgroundColor: "#FF2771C4", altKeyTextColor: "#FFA9C6E7",
+        accentKeyBackgroundColor: "#FF2196F3", accentKeyTextColor: "#FFFFFFFF", keyPressHighlightColor: "#33FFFFFF", keyShadowColor: "#FF1255A1", popupBackgroundColor: "#FF0D47A1",
+        popupTextColor: "#FFFFFFFF", spaceBarColor: "#FF7EAADC", dividerColor: "#1FFFFFFF", clipboardEntryColor: "#FF3F80CB", genericActiveBackgroundColor: "#FF094CEA", genericActiveForegroundColor: "#FFFFFFFF"
+      }
+    },
+    {
+      name: "Monokai",
+      colors: {
+        backgroundColor: "#FF272822", barColor: "#FF1F201B", keyboardColor: "#FF272822", keyBackgroundColor: "#FF33342C", keyTextColor: "#FFD6D6D6",
+        candidateTextColor: "#FFD6D6D6", candidateLabelColor: "#FFD6D6D6", candidateCommentColor: "#FF797979", altKeyBackgroundColor: "#FF2D2E27", altKeyTextColor: "#FF797979",
+        accentKeyBackgroundColor: "#FFB05279", accentKeyTextColor: "#FFD6D6D6", keyPressHighlightColor: "#33FFFFFF", keyShadowColor: "#FF171813", popupBackgroundColor: "#FF1F201B",
+        popupTextColor: "#FFD6D6D6", spaceBarColor: "#FF373830", dividerColor: "#1FFFFFFF", clipboardEntryColor: "#FF33342C", genericActiveBackgroundColor: "#FFB05279", genericActiveForegroundColor: "#FFD6D6D6"
+      }
+    },
+    {
+      name: "AMOLEDBlack",
+      colors: {
+        backgroundColor: "#FF000000", barColor: "#FF373737", keyboardColor: "#FF000000", keyBackgroundColor: "#FF2E2E2E", keyTextColor: "#FFFFFFFF",
+        candidateTextColor: "#FFFFFFFF", candidateLabelColor: "#FFFFFFFF", candidateCommentColor: "#FFA1A1A1", altKeyBackgroundColor: "#FF141414", altKeyTextColor: "#FFA1A1A1",
+        accentKeyBackgroundColor: "#FF80CBC4", accentKeyTextColor: "#FFFFFFFF", keyPressHighlightColor: "#33FFFFFF", keyShadowColor: "#FF000000", popupBackgroundColor: "#FF373737",
+        popupTextColor: "#FFFFFFFF", spaceBarColor: "#FF727272", dividerColor: "#1FFFFFFF", clipboardEntryColor: "#FF2E2E2E", genericActiveBackgroundColor: "#FF26A69A", genericActiveForegroundColor: "#FFFFFFFF"
+      }
+    }
+  ];
+  const defaultThemePresetName = "PixelDark";
+  const defaultThemeColors = deepClone(
+    builtinThemePresets.find((preset) => preset.name === defaultThemePresetName)?.colors || builtinThemePresets[0].colors
+  );
   const monetResourceIds = buildMonetResourceIds();
   const macroStepTypes = ["tap", "shortcut", "edit", "app", "layer", "down", "up", "text"];
   const macroStepTypeLabels = {
@@ -181,23 +293,34 @@
   const state = {
     layout: deepClone(defaultLayout),
     initialLayout: deepClone(defaultLayout),
+    themeCatalog: createBuiltinThemeCatalog(),
+    selectedThemeId: `builtin-${defaultThemePresetName}`,
+    activeTab: "tab-layout",
     selectedBase: "default",
     selectedSubmode: DEFAULT_SUBMODE,
     suppressLayoutJsonInput: false,
     wasmReady: false,
     qr: { chunks: [], index: 0, transferId: "", layoutSignature: "" },
+    themeQr: { chunks: [], index: 0, transferId: "", themeSignature: "" },
     qrImportRunning: false,
+    themeImportRunning: false,
+    themeAssetUrlByPath: new Map(),
     dragKey: null,
     dragRow: null,
     dragRowNode: null,
     dragRowPointerId: null,
     layoutJsonEditor: null,
     layoutJsonEditorLoading: false,
+    themeJsonEditor: null,
+    themeJsonEditorLoading: false,
+    suppressThemeJsonInput: false,
     layoutKeyJsonEditor: null,
     layoutKeyJsonEditorLoading: false,
     codeMirrorModulesPromise: null,
     lastJsonCardHeight: 0,
+    lastThemeJsonCardHeight: 0,
     layoutHeightObserver: null,
+    themeHeightObserver: null,
     composeNestedContext: null,
     macroStepDrag: null,
     macroStepDragPointerId: null,
@@ -230,6 +353,669 @@
     } catch (_) {
       return "";
     }
+  }
+
+  function currentThemeSignature() {
+    try {
+      return JSON.stringify(serializeCurrentTheme());
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function normalizeThemeColors(raw) {
+    const out = {};
+    themeColorTokens.forEach((token) => {
+      const source = raw && Object.prototype.hasOwnProperty.call(raw, token) ? raw[token] : defaultThemeColors[token];
+      const normalized = normalizeColorValue(source);
+      out[token] = normalized == null ? normalizeColorValue(defaultThemeColors[token]) : normalized;
+    });
+    return out;
+  }
+
+  function normalizeColorValue(value) {
+    if (value == null) return null;
+    try {
+      if (typeof value === "number") return toSignedInt32(value >>> 0);
+      const parsed = parseColorValue(String(value).trim());
+      return parsed == null ? null : toSignedInt32(parsed >>> 0);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function toArgbHex(color) {
+    const u = (Number(color) || 0) >>> 0;
+    return `#${u.toString(16).toUpperCase().padStart(8, "0")}`;
+  }
+
+  function toRgbHex(color) {
+    return toArgbHex(color).slice(3);
+  }
+
+  function argbToCss(color) {
+    const u = (Number(color) || 0) >>> 0;
+    const a = ((u >>> 24) & 0xff) / 255;
+    const r = (u >>> 16) & 0xff;
+    const g = (u >>> 8) & 0xff;
+    const b = u & 0xff;
+    return `rgba(${r}, ${g}, ${b}, ${Math.round(a * 1000) / 1000})`;
+  }
+
+  function resolveThemeTokenColor(token) {
+    if (!themeColorTokens.includes(token)) return normalizeColorValue(defaultThemeColors.backgroundColor) || 0;
+    const theme = currentThemeEntry();
+    return normalizeColorValue(theme?.colors?.[token]) ?? normalizeColorValue(defaultThemeColors[token]) ?? 0;
+  }
+
+  function resolveKeyColorValue(key, customKey, monetKey, fallbackColor) {
+    const custom = normalizeColorValue(key?.[customKey]);
+    if (custom != null) return custom;
+    const monetRef = typeof key?.[monetKey] === "string" ? key[monetKey].trim() : "";
+    if (monetRef.startsWith("theme:")) {
+      const token = monetRef.slice("theme:".length);
+      if (themeColorTokens.includes(token)) return resolveThemeTokenColor(token);
+    }
+    return fallbackColor;
+  }
+
+  function resolvePreviewColorsForKey(key) {
+    const variant = keyVariantClass(key);
+    const isAlt = variant.includes("alt-key");
+    const isAccent = variant.includes("accent-key");
+    const isSpace = variant.includes("space-key");
+    const isCompose = variant.includes("compose-key");
+    const fallbackBackground = isAccent
+      ? resolveThemeTokenColor("accentKeyBackgroundColor")
+      : isSpace
+        ? resolveThemeTokenColor(PREVIEW_KEY_BORDER_ENABLED ? "keyBackgroundColor" : "spaceBarColor")
+        : isAlt
+          ? resolveThemeTokenColor("altKeyBackgroundColor")
+          : resolveThemeTokenColor("keyBackgroundColor");
+    const fallbackText = isAccent
+      ? resolveThemeTokenColor("accentKeyTextColor")
+      : isAlt
+        ? resolveThemeTokenColor("altKeyTextColor")
+        : resolveThemeTokenColor("keyTextColor");
+    const fallbackAltText = resolveThemeTokenColor("altKeyTextColor");
+    const backgroundColor = resolveKeyColorValue(key, "backgroundColor", "backgroundColorMonet", fallbackBackground);
+    const textColor = resolveKeyColorValue(key, "textColor", "textColorMonet", fallbackText);
+    const altTextColor = resolveKeyColorValue(key, "altTextColor", "altTextColorMonet", fallbackAltText);
+    const borderColor = PREVIEW_KEY_BORDER_ENABLED
+      ? resolveKeyColorValue(key, "shadowColor", "shadowColorMonet", resolveThemeTokenColor("keyShadowColor"))
+      : backgroundColor;
+    const composeHintColor = resolveThemeTokenColor("genericActiveBackgroundColor");
+    return {
+      backgroundCss: argbToCss(backgroundColor),
+      textCss: argbToCss(isCompose ? composeHintColor : textColor),
+      altTextCss: argbToCss(altTextColor),
+      borderCss: argbToCss(borderColor)
+    };
+  }
+
+  function applyPreviewThemeSurface() {
+    const root = el("layout-preview");
+    if (!root) return;
+    const theme = currentThemeEntry();
+    root.style.backgroundColor = argbToCss(resolveThemeTokenColor("keyboardColor"));
+    root.style.backgroundImage = theme?.backgroundImage ? `url("${theme.backgroundImage}")` : "none";
+    root.style.backgroundSize = theme?.backgroundImage ? "cover" : "";
+    root.style.backgroundPosition = theme?.backgroundImage ? "center" : "";
+    root.style.backgroundBlendMode = theme?.backgroundImage ? "multiply" : "";
+    root.style.borderColor = argbToCss(resolveThemeTokenColor("dividerColor"));
+  }
+
+  function createBuiltinThemeCatalog() {
+    return builtinThemePresets.map((preset) => ({
+      id: `builtin-${preset.name}`,
+      name: preset.name,
+      builtin: true,
+      isDark: /Dark|AMOLED|Monokai|DeepBlue/.test(preset.name),
+      colors: normalizeThemeColors(deepClone(preset.colors)),
+      backgroundImage: ""
+    }));
+  }
+
+  function currentThemeEntry() {
+    return state.themeCatalog.find((item) => item.id === state.selectedThemeId) || state.themeCatalog[0];
+  }
+
+  function isCurrentThemeEditable() {
+    return !!currentThemeEntry() && !currentThemeEntry().builtin;
+  }
+
+  function nextCustomThemeName(baseName, excludeId = "") {
+    const existed = new Set(state.themeCatalog.filter((item) => item.id !== excludeId).map((item) => item.name));
+    if (!existed.has(baseName)) return baseName;
+    let i = 2;
+    while (existed.has(`${baseName} ${i}`)) i += 1;
+    return `${baseName} ${i}`;
+  }
+
+  function generateUuidString() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+    const seed = `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
+    return `${seed.slice(0, 8)}-${seed.slice(8, 12)}-${seed.slice(12, 16)}-${seed.slice(16, 20)}-${seed.slice(20, 32)}`;
+  }
+
+  function nextUuidThemeName() {
+    let candidate = generateUuidString();
+    const existed = new Set(state.themeCatalog.map((item) => item.name));
+    while (existed.has(candidate)) candidate = generateUuidString();
+    return candidate;
+  }
+
+  function inferThemeImageExtByPath(path, fallback = "png") {
+    const normalized = String(path || "").split(/[?#]/)[0].replace(/\\/g, "/");
+    const ext = normalized.includes(".") ? normalized.split(".").pop().toLowerCase() : "";
+    return ext || fallback;
+  }
+
+  function syncThemeBackgroundPathsWithName(theme) {
+    if (!theme || !theme.backgroundImageObject) return false;
+    const safe = theme.name.replace(/[\\/:*?"<>|]/g, "_") || "theme";
+    const croppedExt = inferThemeImageExtByPath(theme.backgroundImageObject.croppedFilePath, "png");
+    const srcExt = inferThemeImageExtByPath(theme.backgroundImageObject.srcFilePath, croppedExt);
+    const nextSpec = normalizeThemeBackgroundImageObject({
+      ...theme.backgroundImageObject,
+      croppedFilePath: `${safe}/${safe}.cropped.${croppedExt}`,
+      srcFilePath: `${safe}/${safe}.src.${srcExt}`
+    });
+    if (!nextSpec) return false;
+    theme.backgroundImageObject = nextSpec;
+    if (typeof theme.backgroundImage === "string" && theme.backgroundImage.startsWith("blob:")) {
+      registerThemeAssetForBackground(nextSpec, theme.backgroundImage);
+    }
+    return true;
+  }
+
+  function renameThemeAndSyncAssets(theme, requestedName) {
+    const rawName = String(requestedName || "").trim();
+    if (!rawName) throw new Error("主题名不能为空");
+    const nextName = nextCustomThemeName(rawName, theme.id);
+    if (nextName === theme.name) return { changed: false, name: nextName };
+    theme.name = nextName;
+    syncThemeBackgroundPathsWithName(theme);
+    return { changed: true, name: nextName };
+  }
+
+  function renderThemeList() {
+    const root = el("theme-list");
+    if (!root) return;
+    root.innerHTML = state.themeCatalog.map((theme) => {
+      const barColor = argbToCss(normalizeColorValue(theme.colors.barColor));
+      const keyboardColor = argbToCss(normalizeColorValue(theme.colors.keyboardColor));
+      const dividerColor = argbToCss(normalizeColorValue(theme.colors.dividerColor));
+      const keyTextColor = argbToCss(normalizeColorValue(theme.colors.keyTextColor));
+      const spaceBarColor = argbToCss(normalizeColorValue(theme.colors.spaceBarColor));
+      const accentBg = argbToCss(normalizeColorValue(theme.colors.accentKeyBackgroundColor));
+      const previewStyle = `background-color:${escapeAttr(keyboardColor)};border-color:${escapeAttr(dividerColor)};${theme.backgroundImage ? `background-image:url('${escapeAttr(theme.backgroundImage)}');background-size:cover;background-position:center;` : ""}`;
+      return `
+        <button type="button" class="theme-card ${theme.id === state.selectedThemeId ? "active" : ""}" data-theme-id="${escapeAttr(theme.id)}">
+          <div class="theme-card-preview" style="${previewStyle}">
+            <span class="theme-card-preview-bar" style="background:${escapeAttr(barColor)}"></span>
+            <span class="theme-card-preview-name" style="color:${escapeAttr(keyTextColor)}">${escapeHtml(theme.name)}</span>
+            <span class="theme-card-preview-space" style="background:${escapeAttr(spaceBarColor)}"></span>
+            <span class="theme-card-preview-return" style="background:${escapeAttr(accentBg)}"></span>
+          </div>
+        </button>
+      `;
+    }).join("");
+    root.querySelectorAll(".theme-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        const id = card.dataset.themeId;
+        if (!id) return;
+        state.selectedThemeId = id;
+        renderThemeList();
+        renderThemeEditor();
+        syncThemeJsonFromState();
+        syncLayoutUiFromState();
+      });
+    });
+  }
+
+  function serializeCurrentTheme() {
+    const theme = currentThemeEntry();
+    return {
+      name: theme.name,
+      builtin: !!theme.builtin,
+      isDark: !!theme.isDark,
+      backgroundImage: theme.backgroundImageObject ? deepClone(theme.backgroundImageObject) : (theme.backgroundImage || ""),
+      colors: deepClone(theme.colors)
+    };
+  }
+
+  function syncThemeJsonFromState() {
+    const text = `${prettyJson(serializeCurrentTheme())}\n`;
+    state.suppressThemeJsonInput = true;
+    setThemeJsonText(text);
+    state.suppressThemeJsonInput = false;
+    setStatus("theme-json-status", "JSON 已同步", "ok");
+  }
+
+  function normalizeThemeBackgroundImageObject(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const croppedFilePath = typeof raw.croppedFilePath === "string" ? raw.croppedFilePath : "";
+    const srcFilePath = typeof raw.srcFilePath === "string" ? raw.srcFilePath : "";
+    if (!croppedFilePath && !srcFilePath) return null;
+    const brightness = Number.isFinite(Number(raw.brightness)) ? Number(raw.brightness) : 70;
+    const cropRotation = Number.isFinite(Number(raw.cropRotation)) ? Number(raw.cropRotation) : 0;
+    const blurRadius = Number.isFinite(Number(raw.blurRadius)) ? Number(raw.blurRadius) : 0;
+    return {
+      croppedFilePath,
+      srcFilePath,
+      brightness,
+      cropRect: raw.cropRect ?? null,
+      cropRotation,
+      blurRadius
+    };
+  }
+
+  function registerThemeAssetPath(path, url) {
+    if (!path || !url) return;
+    const normalized = String(path).replace(/\\/g, "/");
+    state.themeAssetUrlByPath.set(normalized, url);
+    const base = normalized.split("/").pop();
+    if (base) state.themeAssetUrlByPath.set(base, url);
+  }
+
+  function registerThemeAssetForBackground(spec, url) {
+    if (!spec || !url) return;
+    registerThemeAssetPath(spec.croppedFilePath, url);
+    registerThemeAssetPath(spec.srcFilePath, url);
+  }
+
+  function resolveThemeAssetUrl(spec) {
+    if (!spec) return "";
+    const candidates = [spec.croppedFilePath, spec.srcFilePath]
+      .filter((v) => typeof v === "string" && v.trim())
+      .flatMap((v) => {
+        const normalized = v.replace(/\\/g, "/");
+        return [normalized, normalized.split("/").pop()];
+      })
+      .filter(Boolean);
+    for (const key of candidates) {
+      const url = state.themeAssetUrlByPath.get(key);
+      if (url) return url;
+    }
+    return "";
+  }
+
+  function normalizeImportedThemePayload(rawPayload) {
+    const payload = rawPayload && typeof rawPayload === "object" ? rawPayload : {};
+    let themeRaw = payload;
+    if (payload && Object.prototype.hasOwnProperty.call(payload, "theme")) {
+      if (typeof payload.theme === "string") {
+        themeRaw = JSON.parse(payload.theme);
+      } else if (payload.theme && typeof payload.theme === "object") {
+        themeRaw = payload.theme;
+      }
+    }
+    const themeObj = themeRaw && typeof themeRaw === "object" ? themeRaw : {};
+    const colorsSource = themeObj.colors && typeof themeObj.colors === "object" ? themeObj.colors : themeObj;
+    const backgroundImageObject = normalizeThemeBackgroundImageObject(themeObj.backgroundImage);
+    return {
+      name: typeof themeObj.name === "string" && themeObj.name.trim() ? themeObj.name.trim() : "Imported Theme",
+      isDark: !!themeObj.isDark,
+      colors: normalizeThemeColors(colorsSource),
+      backgroundImage: typeof themeObj.backgroundImage === "string" ? themeObj.backgroundImage : "",
+      backgroundImageObject
+    };
+  }
+
+  function addImportedThemeEntry(themeData, sourceLabel = "已导入主题") {
+    const imported = {
+      id: `custom-${Math.random().toString(36).slice(2, 10)}`,
+      name: nextCustomThemeName(themeData.name || "Imported Theme"),
+      builtin: false,
+      isDark: !!themeData.isDark,
+      colors: normalizeThemeColors(themeData.colors),
+      backgroundImage: typeof themeData.backgroundImage === "string" ? themeData.backgroundImage : "",
+      backgroundImageObject: themeData.backgroundImageObject ? deepClone(themeData.backgroundImageObject) : null
+    };
+    if (imported.backgroundImageObject && imported.backgroundImage.startsWith("blob:")) {
+      registerThemeAssetForBackground(imported.backgroundImageObject, imported.backgroundImage);
+    }
+    state.themeCatalog.unshift(imported);
+    state.selectedThemeId = imported.id;
+    renderThemeList();
+    renderThemeEditor();
+    syncThemeJsonFromState();
+    syncLayoutUiFromState();
+    setStatus("theme-editor-status", `${sourceLabel}：${imported.name}`, "ok");
+    return imported;
+  }
+
+  function renderThemeSupplementPreview() {
+    const leftRoot = el("theme-preview-extra-left");
+    const rightRoot = el("theme-preview-extra-right");
+    if (!leftRoot || !rightRoot) return;
+    const colors = {
+      candidateTextColor: argbToCss(resolveThemeTokenColor("candidateTextColor")),
+      candidateLabelColor: argbToCss(resolveThemeTokenColor("candidateLabelColor")),
+      candidateCommentColor: argbToCss(resolveThemeTokenColor("candidateCommentColor")),
+      popupBackgroundColor: argbToCss(resolveThemeTokenColor("popupBackgroundColor")),
+      popupTextColor: argbToCss(resolveThemeTokenColor("popupTextColor")),
+      clipboardEntryColor: argbToCss(resolveThemeTokenColor("clipboardEntryColor")),
+      genericActiveBackgroundColor: argbToCss(resolveThemeTokenColor("genericActiveBackgroundColor")),
+      genericActiveForegroundColor: argbToCss(resolveThemeTokenColor("genericActiveForegroundColor")),
+      barColor: argbToCss(resolveThemeTokenColor("barColor")),
+      backgroundColor: argbToCss(resolveThemeTokenColor("backgroundColor"))
+    };
+    const itemsHtml = `
+      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.backgroundColor)}"><span class="label">背景</span><span class="value" style="color:${escapeAttr(colors.candidateTextColor)}">Background</span></div>
+      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.barColor)}"><span class="label">工具栏</span><span class="value" style="color:${escapeAttr(colors.candidateTextColor)}">Toolbar</span></div>
+      <div class="theme-preview-extra-item"><span class="label">候选文字</span><span class="value" style="color:${escapeAttr(colors.candidateTextColor)}">Candidate</span></div>
+      <div class="theme-preview-extra-item"><span class="label">候选标签</span><span class="value" style="color:${escapeAttr(colors.candidateLabelColor)}">Label</span></div>
+      <div class="theme-preview-extra-item"><span class="label">候选注释</span><span class="value" style="color:${escapeAttr(colors.candidateCommentColor)}">Comment</span></div>
+      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.popupBackgroundColor)}"><span class="label">弹出文字</span><span class="value" style="color:${escapeAttr(colors.popupTextColor)}">Popup</span></div>
+      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.clipboardEntryColor)}"><span class="label">剪贴板项</span><span class="value" style="color:${escapeAttr(colors.candidateTextColor)}">Clipboard</span></div>
+      <div class="theme-preview-extra-item" style="background:${escapeAttr(colors.genericActiveBackgroundColor)}"><span class="label">激活态</span><span class="value" style="color:${escapeAttr(colors.genericActiveForegroundColor)}">Active</span></div>
+    `;
+    const parts = itemsHtml.trim().split(/(?=<div class="theme-preview-extra-item")/);
+    leftRoot.innerHTML = parts.slice(0, 4).join("");
+    rightRoot.innerHTML = parts.slice(4, 8).join("");
+  }
+
+  function setActiveTab(targetId) {
+    const buttons = Array.from(document.querySelectorAll(".tabs .tab"));
+    state.activeTab = targetId;
+    buttons.forEach((btn) => {
+      const active = btn.dataset.tabTarget === targetId;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    document.querySelectorAll("main .panel").forEach((panel) => {
+      panel.classList.toggle("active", panel.id === targetId);
+    });
+    updateFixedChromeMetrics();
+    syncJsonEditorHeight();
+    syncThemeJsonHeight();
+  }
+
+  function initTabs() {
+    const buttons = Array.from(document.querySelectorAll(".tabs .tab"));
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => setActiveTab(btn.dataset.tabTarget || "tab-layout"));
+    });
+    setActiveTab(state.activeTab || "tab-layout");
+  }
+
+  function renderThemeEditor() {
+    const theme = currentThemeEntry();
+    const editable = !!theme && !theme.builtin;
+    setThemeJsonEditable(editable);
+    const applyBtn = el("theme-json-apply");
+    if (applyBtn) applyBtn.disabled = !editable;
+    const rows = el("theme-color-rows");
+    if (!rows) return;
+    rows.hidden = !editable;
+    if (!editable) {
+      rows.innerHTML = "";
+      setStatus("theme-editor-status", "", "");
+      el("theme-delete-custom").disabled = true;
+      el("theme-rename-custom").disabled = true;
+      el("theme-import-background").disabled = true;
+      el("theme-clear-background").disabled = true;
+      syncThemeJsonHeight();
+      return;
+    }
+    rows.innerHTML = themeColorTokens.map((token) => {
+      const value = resolveThemeTokenColor(token);
+      const argb = toArgbHex(value);
+      return `
+        <div class="theme-color-row" data-token="${escapeAttr(token)}">
+          <label>${escapeHtml(themeColorLabels[token] || token)}</label>
+          <div class="theme-color-inputs">
+            <input type="text" class="theme-color-input" value="${escapeAttr(argb)}" placeholder="#AARRGGBB" aria-label="${escapeAttr(`${themeColorLabels[token] || token} ARGB`)}" ${editable ? "" : "readonly"}>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    rows.querySelectorAll(".theme-color-row").forEach((row) => {
+      const token = row.dataset.token;
+      const input = row.querySelector(".theme-color-input");
+      const applyColor = (nextColor) => {
+        const normalized = normalizeColorValue(nextColor);
+        if (normalized == null) return false;
+        theme.colors[token] = normalized;
+        renderThemeList();
+        syncThemeJsonFromState();
+        renderThemeSupplementPreview();
+        syncLayoutUiFromState();
+        return true;
+      };
+      const syncInputToState = () => {
+        if (!applyColor(input.value.trim())) {
+          input.value = toArgbHex(resolveThemeTokenColor(token));
+          setStatus("theme-editor-status", `${themeColorLabels[token] || token} 颜色格式无效`, "err");
+        } else {
+          setStatus("theme-editor-status", "主题颜色已更新并同步到预览", "ok");
+        }
+      };
+      installThemeColorPicker(input, token, syncInputToState);
+      input.addEventListener("change", syncInputToState);
+    });
+    el("theme-delete-custom").disabled = false;
+    el("theme-rename-custom").disabled = false;
+    el("theme-import-background").disabled = false;
+    el("theme-clear-background").disabled = false;
+    syncThemeJsonHeight();
+  }
+
+  function installThemeColorPicker(input, token, onChange) {
+    if (!window.jscolor || input.jscolor) return;
+    try {
+      const picker = new window.jscolor(input, {
+        hash: true,
+        closeButton: true,
+        showOnClick: true,
+        format: "hexa",
+        alphaChannel: true,
+        valueElement: null,
+        onInput: () => {
+          syncArgbInputFromInlinePicker(input);
+          if (typeof onChange === "function") onChange();
+        }
+      });
+      const originalShow = picker.show.bind(picker);
+      picker.show = () => {
+        const result = originalShow();
+        return result;
+      };
+      syncThemePickerFromArgbInput(input);
+    } catch (_) {}
+  }
+
+  function syncThemePickerFromArgbInput(input) {
+    syncInlinePickerFromArgbInput(input, false);
+    syncArgbInputFromInlinePicker(input);
+  }
+
+  function initThemeTab() {
+    const list = el("theme-list");
+    if (!list) return;
+    el("theme-create-from-current").addEventListener("click", () => {
+      const source = currentThemeEntry();
+      const custom = {
+        id: `custom-${Math.random().toString(36).slice(2, 10)}`,
+        name: nextUuidThemeName(),
+        builtin: false,
+        isDark: !!source.isDark,
+        colors: normalizeThemeColors(deepClone(source.colors)),
+        backgroundImage: source.backgroundImage || "",
+        backgroundImageObject: source.backgroundImageObject ? deepClone(source.backgroundImageObject) : null
+      };
+      syncThemeBackgroundPathsWithName(custom);
+      state.themeCatalog.unshift(custom);
+      state.selectedThemeId = custom.id;
+      renderThemeList();
+      renderThemeEditor();
+      syncThemeJsonFromState();
+      syncLayoutUiFromState();
+      setStatus("theme-editor-status", `已创建主题：${custom.name}`, "ok");
+    });
+    el("theme-rename-custom").addEventListener("click", () => {
+      const theme = currentThemeEntry();
+      if (!theme || theme.builtin) return;
+      const nextName = prompt("输入新的主题名称", theme.name);
+      if (nextName == null) return;
+      try {
+        const result = renameThemeAndSyncAssets(theme, nextName);
+        if (!result.changed) {
+          setStatus("theme-editor-status", "主题名称未变化", "");
+          return;
+        }
+        renderThemeList();
+        renderThemeEditor();
+        syncThemeJsonFromState();
+        syncLayoutUiFromState();
+        setStatus("theme-editor-status", `已重命名主题：${result.name}`, "ok");
+      } catch (e) {
+        setStatus("theme-editor-status", `重命名失败：${e.message}`, "err");
+      }
+    });
+    el("theme-delete-custom").addEventListener("click", () => {
+      const theme = currentThemeEntry();
+      if (!theme || theme.builtin) return;
+      if (!confirm(`确认删除主题「${theme.name}」？`)) return;
+      state.themeCatalog = state.themeCatalog.filter((item) => item.id !== theme.id);
+      state.selectedThemeId = state.themeCatalog[0]?.id || "";
+      renderThemeList();
+      renderThemeEditor();
+      syncThemeJsonFromState();
+      syncLayoutUiFromState();
+      setStatus("theme-editor-status", `已删除主题：${theme.name}`, "ok");
+    });
+    el("theme-import-background").addEventListener("click", () => {
+      if (!isCurrentThemeEditable()) return;
+      const input = el("theme-import-background-file");
+      input.value = "";
+      input.click();
+    });
+    el("theme-import-background-file").addEventListener("change", (ev) => {
+      const file = ev.target.files?.[0];
+      const theme = currentThemeEntry();
+      if (!file || !theme || theme.builtin) return;
+      const previewUrl = URL.createObjectURL(file);
+      const nextSpec = buildThemeBackgroundSpecForLocalImage(theme, file);
+      theme.backgroundImageObject = normalizeThemeBackgroundImageObject(nextSpec);
+      theme.backgroundImage = previewUrl;
+      if (theme.backgroundImageObject) {
+        registerThemeAssetForBackground(theme.backgroundImageObject, previewUrl);
+      }
+      renderThemeList();
+      syncThemeJsonFromState();
+      syncLayoutUiFromState();
+      setStatus("theme-editor-status", "背景图片已更新", "ok");
+    });
+    el("theme-clear-background").addEventListener("click", () => {
+      const theme = currentThemeEntry();
+      if (!theme || theme.builtin) return;
+      theme.backgroundImage = "";
+      theme.backgroundImageObject = null;
+      renderThemeList();
+      renderThemeEditor();
+      syncThemeJsonFromState();
+      syncLayoutUiFromState();
+      setStatus("theme-editor-status", "已清除背景图片", "ok");
+    });
+    el("theme-export-json").addEventListener("click", () => {
+      const theme = currentThemeEntry();
+      downloadFile(`${theme.name}.theme.json`, `${prettyJson(serializeCurrentTheme())}\n`);
+      setStatus("theme-editor-status", `已导出主题 JSON：${theme.name}`, "ok");
+    });
+    el("theme-import-shared").addEventListener("click", () => {
+      const input = el("theme-import-file");
+      if (!input) return;
+      input.value = "";
+      input.click();
+    });
+    el("theme-import-file").addEventListener("change", async (ev) => {
+      const file = ev.target?.files?.[0];
+      if (!file) return;
+      if (state.themeImportRunning) {
+        setStatus("theme-qr-meta", "已有主题导入任务在进行，请稍后重试", "err");
+        return;
+      }
+      state.themeImportRunning = true;
+      try {
+        const fileName = String(file.name || "").toLowerCase();
+        const isZip = file.type === "application/zip" || fileName.endsWith(".zip");
+        if (isZip) {
+          const themeData = await decodeThemeFromZipFile(file);
+          const imported = addImportedThemeEntry(themeData, "已导入主题 ZIP");
+          setStatus("theme-qr-meta", `ZIP 导入成功：${imported.name}`, "ok");
+        } else {
+          await importThemeFromQrLongImage(file);
+        }
+      } catch (e) {
+        setStatus("theme-qr-meta", `主题导入失败：${e.message}`, "err");
+      } finally {
+        state.themeImportRunning = false;
+        const input = el("theme-import-file");
+        if (input) input.value = "";
+      }
+    });
+    el("theme-json-apply").addEventListener("click", () => {
+      const theme = currentThemeEntry();
+      if (!theme || theme.builtin) {
+        setStatus("theme-json-status", "内置主题不可直接编辑，请先复制为自定义主题", "err");
+        return;
+      }
+      try {
+        const parsed = JSON.parse(getThemeJsonText() || "{}");
+        const candidateColors = parsed.colors && typeof parsed.colors === "object" ? parsed.colors : parsed;
+        theme.colors = normalizeThemeColors(candidateColors);
+        if (typeof parsed.name === "string" && parsed.name.trim()) {
+          renameThemeAndSyncAssets(theme, parsed.name.trim());
+        }
+        if (typeof parsed.isDark === "boolean") theme.isDark = parsed.isDark;
+        if (typeof parsed.backgroundImage === "string") {
+          theme.backgroundImage = parsed.backgroundImage;
+          theme.backgroundImageObject = null;
+        } else if (parsed.backgroundImage && typeof parsed.backgroundImage === "object") {
+          const bgSpec = normalizeThemeBackgroundImageObject(parsed.backgroundImage);
+          theme.backgroundImageObject = bgSpec;
+          theme.backgroundImage = resolveThemeAssetUrl(bgSpec);
+        }
+        renderThemeList();
+        renderThemeEditor();
+        syncThemeJsonFromState();
+        syncLayoutUiFromState();
+        setStatus("theme-json-status", "主题 JSON 已应用", "ok");
+      } catch (e) {
+        setStatus("theme-json-status", `JSON 无效：${e.message}`, "err");
+      }
+    });
+    if (!state.themeCatalog.find((item) => item.id === state.selectedThemeId)) {
+      state.selectedThemeId = state.themeCatalog[0]?.id || "";
+    }
+    const themeJsonCard = el("theme-json-card");
+    if (themeJsonCard) {
+      themeJsonCard.open = true;
+      if (!state.themeJsonEditor) {
+        initThemeJsonEditor().then(() => syncThemeJsonHeight());
+      } else {
+        syncThemeJsonHeight();
+      }
+      themeJsonCard.addEventListener("toggle", () => {
+        if (!themeJsonCard.open) {
+          syncThemeJsonHeight();
+          return;
+        }
+        if (!state.themeJsonEditor) {
+          initThemeJsonEditor().then(() => syncThemeJsonHeight());
+        } else {
+          syncThemeJsonHeight();
+        }
+      });
+    }
+    renderThemeList();
+    renderThemeEditor();
+    syncThemeJsonFromState();
+    renderThemeSupplementPreview();
   }
 
   function exportJsonOneKeyPerLine(v) {
@@ -598,19 +1384,25 @@
     const rows = getRows();
     const rowPercents = resolveRowHeightPercents(rows);
     const root = el("layout-preview");
+    applyPreviewThemeSurface();
     root.innerHTML = rows.map((row, rowIndex) => {
       const rowHeight = effectiveRowHeight(rowPercents[rowIndex] ?? 0);
       const widths = resolveRegularRowWidths(row);
       return `<div class="layout-row" style="--row-height:${rowHeight}px"><div class="keys">${row.map((key, keyIndex) => {
         const w = widths[keyIndex] || 0;
         const widthPercent = `${(w * 100).toFixed(6)}%`;
-        const alt = keySubText(key) ? `<span class="layout-key-alt">${escapeHtml(keySubText(key))}</span>` : "";
-        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)}"><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
+        const previewColors = resolvePreviewColorsForKey(key);
+        const keyStyle = `background:${previewColors.backgroundCss};color:${previewColors.textCss};border-color:${previewColors.borderCss};`;
+        const alt = keySubText(key)
+          ? `<span class="layout-key-alt" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
+          : "";
+        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyle)}"><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
       }).join("")}</div></div>`;
     }).join("");
     requestAnimationFrame(fitLayoutPreviewText);
     const height = getHeightOverride();
     setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${height ? `，键盘高度 ${height}%` : ""}`, "");
+    renderThemeSupplementPreview();
     updateFixedChromeMetrics();
   }
 
@@ -641,16 +1433,12 @@
   }
 
   function updateFixedChromeMetrics() {
-    requestAnimationFrame(() => {
-      const topbar = document.querySelector(".topbar");
-      const preview = document.querySelector(".keyboard-preview-panel");
-      const topbarHeight = topbar?.offsetHeight || 0;
-      document.documentElement.style.setProperty("--topbar-height", `${topbarHeight}px`);
-      requestAnimationFrame(() => {
-        const previewHeight = preview?.offsetHeight || 0;
-        document.documentElement.style.setProperty("--preview-panel-height", `${previewHeight}px`);
-      });
-    });
+    const topbar = document.querySelector(".topbar");
+    const preview = document.querySelector(".keyboard-preview-panel");
+    const topbarHeight = topbar?.offsetHeight || 0;
+    const previewHeight = preview?.offsetHeight || 0;
+    document.documentElement.style.setProperty("--topbar-height", `${topbarHeight}px`);
+    document.documentElement.style.setProperty("--preview-panel-height", `${previewHeight}px`);
   }
 
   function defaultRowHeightPercent(rowCount) {
@@ -2597,6 +3385,7 @@
           scroller.style.maxHeight = "";
           scroller.style.overflow = "";
         }
+
       } else {
         const textarea = el("layout-json");
         textarea.style.height = "";
@@ -2669,6 +3458,106 @@
     textarea.style.overflow = "auto";
   }
 
+  function syncThemeJsonHeight() {
+    if (state.activeTab !== "tab-theme") return;
+    const jsonCard = el("theme-json-card");
+    if (!jsonCard) return;
+    if (!jsonCard.open) {
+      return;
+    }
+    const mainCard = document.querySelector(".theme-main-card");
+    let referenceCardHeight = Math.round(jsonCard.getBoundingClientRect().height || 0);
+    if (mainCard) {
+      const style = getComputedStyle(mainCard);
+      const border =
+        (Number.parseFloat(style.borderTopWidth || "0") || 0) +
+        (Number.parseFloat(style.borderBottomWidth || "0") || 0);
+      const scrollHeight = Math.round(mainCard.scrollHeight + border);
+      const mainRectHeight = Math.round(mainCard.getBoundingClientRect().height || 0);
+      referenceCardHeight = scrollHeight > 0 ? scrollHeight : (mainRectHeight > 0 ? mainRectHeight : referenceCardHeight);
+      state.lastThemeJsonCardHeight = referenceCardHeight;
+    }
+    const summary = jsonCard.querySelector("summary");
+    const status = el("theme-json-status");
+    const toolbar = jsonCard.querySelector(".toolbar");
+    const cardStyle = getComputedStyle(jsonCard);
+    const cardVerticalPadding =
+      (Number.parseFloat(cardStyle.paddingTop || "0") || 0) +
+      (Number.parseFloat(cardStyle.paddingBottom || "0") || 0);
+    const height = Math.max(
+      200,
+      Math.floor(
+        referenceCardHeight -
+        cardVerticalPadding -
+        (summary?.offsetHeight || 0) -
+        (status?.offsetHeight || 0) -
+        (toolbar?.offsetHeight || 0) -
+        24
+      )
+    );
+    const editor = state.themeJsonEditor;
+    if (editor) {
+      editor.dom.style.height = `${height}px`;
+      editor.dom.style.maxHeight = `${height}px`;
+      editor.dom.style.minHeight = "0";
+      editor.dom.style.width = "100%";
+      const scroller = editor.dom.querySelector(".cm-scroller");
+      if (scroller) {
+        scroller.style.height = `${height}px`;
+        scroller.style.maxHeight = `${height}px`;
+        scroller.style.minHeight = "0";
+        scroller.style.overflow = "auto";
+      }
+      editor.requestMeasure();
+      return;
+    }
+    const textarea = el("theme-json");
+    if (textarea) {
+      textarea.style.height = `${height}px`;
+      textarea.style.maxHeight = `${height}px`;
+      textarea.style.minHeight = "0";
+      textarea.style.width = "100%";
+      textarea.style.overflow = "auto";
+    }
+  }
+
+  function getThemeJsonText() {
+    return state.themeJsonEditor?.state.doc.toString() ?? el("theme-json").value;
+  }
+
+  function setThemeJsonText(text) {
+    const editor = state.themeJsonEditor;
+    if (editor) {
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: text }
+      });
+      return;
+    }
+    el("theme-json").value = text;
+  }
+
+  function setThemeJsonEditable(editable) {
+    const textarea = el("theme-json");
+    if (textarea) textarea.readOnly = !editable;
+    const editor = state.themeJsonEditor;
+    if (!editor) return;
+    if (editor.contentDOM) {
+      editor.contentDOM.contentEditable = editable ? "true" : "false";
+      editor.contentDOM.setAttribute("aria-readonly", editable ? "false" : "true");
+    }
+    editor.dom.classList.toggle("cm-readonly", !editable);
+  }
+
+  function applyThemeJsonEditorInput() {
+    if (state.suppressThemeJsonInput) return;
+    try {
+      JSON.parse(getThemeJsonText() || "{}");
+      setStatus("theme-json-status", "JSON 合法，可点击“应用 JSON 到当前主题”", "ok");
+    } catch (e) {
+      setStatus("theme-json-status", `JSON 无效：${e.message}`, "err");
+    }
+  }
+
   function applyLayoutJsonEditorInput() {
     if (state.suppressLayoutJsonInput) return;
     try {
@@ -2715,6 +3604,39 @@
     }
   }
 
+  async function initThemeJsonEditor() {
+    if (state.themeJsonEditor || state.themeJsonEditorLoading) return;
+    state.themeJsonEditorLoading = true;
+    const textarea = el("theme-json");
+    textarea.addEventListener("input", applyThemeJsonEditorInput);
+    try {
+      const { EditorView, basicSetup, json, oneDark } = await loadCodeMirrorModules();
+      const updateListener = EditorView.updateListener.of((update) => {
+        if (update.docChanged) applyThemeJsonEditorInput();
+      });
+      const editor = new EditorView({
+        doc: textarea.value,
+        extensions: [
+          basicSetup,
+          json(),
+          oneDark,
+          updateListener,
+          EditorView.lineWrapping
+        ]
+      });
+      textarea.classList.add("json-editor-fallback");
+      textarea.after(editor.dom);
+      state.themeJsonEditor = editor;
+      setThemeJsonEditable(isCurrentThemeEditable());
+      syncThemeJsonHeight();
+    } catch (e) {
+      console.warn("CodeMirror failed to load, using textarea fallback", e);
+      syncThemeJsonHeight();
+    } finally {
+      state.themeJsonEditorLoading = false;
+    }
+  }
+
   async function initLayoutKeyJsonEditor() {
     if (state.layoutKeyJsonEditor || state.layoutKeyJsonEditorLoading) return;
     state.layoutKeyJsonEditorLoading = true;
@@ -2749,6 +3671,7 @@
       renderLayoutPreview();
       syncLayoutJsonFromState();
       updateQrUi();
+      updateThemeQrUi();
     } catch (e) {
       setStatus("layout-json-status", `布局错误：${e.message}`, "err");
     }
@@ -2787,6 +3710,7 @@
     el("layout-add-dialog-cancel").addEventListener("click", () => el("layout-add-dialog").close());
     el("layout-rename-layout").addEventListener("click", renameLayout);
     el("layout-delete-layout").addEventListener("click", handlePrimaryDeleteLayout);
+    el("layout-open-theme").addEventListener("click", () => setActiveTab("tab-theme"));
     // layout-add-submode and layout-delete-submode controls removed from DOM; listeners omitted
     el("layout-reset").addEventListener("click", () => {
       state.layout = deepClone(state.initialLayout);
@@ -2812,37 +3736,42 @@
         e.target.value = "";
       }
     });
-    window.bindKeyEditorDialogEvents({
-      el,
-      setStatus,
-      keyDialogState,
-      deleteKey,
-      updateDraftFromMainFields,
-      updateKeyDialogFieldVisibility,
-      saveLayoutKeyDialog,
-      handleKeyDialogCancel,
-      openDisplayTextDialog,
-      openLabelsDialog,
-      openMacroDialog,
-      openColorsDialog,
-      openComposeDialog,
-      syncComposeMetaToParentDraft,
-      clearComposeColorOverridesWhenInherited,
-      refreshKeyDialogSummaries,
-      clearComposeNested,
-      openKeyJsonDialog,
-      updateDisplayTextDialogVisibility,
-      appendDisplayMapRow,
-      saveDisplayTextDialog,
-      saveLabelsDialog,
-      saveMacroDialog,
-      openMacroEventEditor,
-      addMacroEventStep,
-      resetMacroStepDragState,
-      saveMacroEventEditor,
-      saveColorsDialog,
-      saveKeyJsonDialog
-    });
+    if (typeof window.bindKeyEditorDialogEvents === "function") {
+      window.bindKeyEditorDialogEvents({
+        el,
+        setStatus,
+        keyDialogState,
+        deleteKey,
+        updateDraftFromMainFields,
+        updateKeyDialogFieldVisibility,
+        saveLayoutKeyDialog,
+        handleKeyDialogCancel,
+        openDisplayTextDialog,
+        openLabelsDialog,
+        openMacroDialog,
+        openColorsDialog,
+        openComposeDialog,
+        syncComposeMetaToParentDraft,
+        clearComposeColorOverridesWhenInherited,
+        refreshKeyDialogSummaries,
+        clearComposeNested,
+        openKeyJsonDialog,
+        updateDisplayTextDialogVisibility,
+        appendDisplayMapRow,
+        saveDisplayTextDialog,
+        saveLabelsDialog,
+        saveMacroDialog,
+        openMacroEventEditor,
+        addMacroEventStep,
+        resetMacroStepDragState,
+        saveMacroEventEditor,
+        saveColorsDialog,
+        saveKeyJsonDialog
+      });
+    } else {
+      console.error("bindKeyEditorDialogEvents not loaded");
+      setStatus("layout-json-status", "按键编辑模块加载失败，请刷新页面重试", "err");
+    }
     const jsonCard = el("layout-json-card");
     if (jsonCard) {
       // 默认展开 layout-json-card
@@ -2965,12 +3894,12 @@
     state.wasmReady = true;
   }
 
-  async function encodeJsonToChunks(rawJson, profile) {
+  async function encodeJsonToChunks(rawJson, profile, transferType = TRANSFER_TYPE_LAYOUT) {
     await ensureWasm();
     const raw = new TextEncoder().encode(rawJson);
     const compressed = window.lzma_wasm.compress(raw, { format: "xz", level: 6 });
     const crc = crc32(compressed);
-    const transferId = buildTransferId(TRANSFER_TYPE_LAYOUT, profile);
+    const transferId = buildTransferId(transferType, profile);
     const total = Math.ceil(compressed.length / MAX_CHUNK_BYTES) || 1;
     const chunks = [];
     for (let i = 0; i < total; i++) {
@@ -2991,8 +3920,27 @@
 
   async function generateLayoutQrBundle() {
     const payload = currentLayoutQrPayload();
-    const bundle = await encodeJsonToChunks(payload.json, payload.profile);
+    const bundle = await encodeJsonToChunks(payload.json, payload.profile, TRANSFER_TYPE_LAYOUT);
     return { ...bundle, profile: payload.profile };
+  }
+
+  function currentThemeQrPayload() {
+    const theme = serializeCurrentTheme();
+    const payload = {
+      schema: "f5a-theme-qr-v1",
+      theme: JSON.stringify({
+        name: theme.name,
+        isDark: theme.isDark,
+        backgroundImage: theme.backgroundImage || "",
+        ...theme.colors
+      })
+    };
+    return { json: `${prettyJson(payload)}\n` };
+  }
+
+  async function generateThemeQrBundle() {
+    const payload = currentThemeQrPayload();
+    return await encodeJsonToChunks(payload.json, null, TRANSFER_TYPE_THEME);
   }
 
   function displayProfile(profile) {
@@ -3010,8 +3958,10 @@
     }
   }
 
-  function buildChunkLabels(bundle, profile) {
-    return bundle.chunks.map((_, i) => `Layout · ${displayProfile(profile)} · Chunk ${i + 1}/${bundle.total} · ${bundle.transferId}`);
+  function buildChunkLabels(bundle, profile, transferType = TRANSFER_TYPE_LAYOUT) {
+    const label = transferType === TRANSFER_TYPE_THEME ? "Theme" : "Layout";
+    const profilePart = transferType === TRANSFER_TYPE_LAYOUT ? ` · ${displayProfile(profile)}` : "";
+    return bundle.chunks.map((_, i) => `${label}${profilePart} · Chunk ${i + 1}/${bundle.total} · ${bundle.transferId}`);
   }
 
   function makeQrCanvas(content, size) {
@@ -3133,9 +4083,9 @@
     canvas.width = targetWidth;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#10131b";
+    ctx.fillStyle = argbToCss(resolveThemeTokenColor("keyboardColor"));
     ctx.fillRect(0, 0, targetWidth, height);
-    ctx.strokeStyle = "#2a3142";
+    ctx.strokeStyle = argbToCss(resolveThemeTokenColor("dividerColor"));
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, 0.5, targetWidth - 1, height - 1);
 
@@ -3150,19 +4100,20 @@
         const keyX = x + 3;
         const keyW = Math.max(1, slotWidth - 6);
         const variant = keyVariantClass(key);
+        const previewColors = resolvePreviewColorsForKey(key);
         const isMacro = variant.includes("macro-key");
-        const bg = isMacro ? "#4cc38a" : variant.includes("accent-key") ? "#4f8cff" : variant.includes("space-key") ? "#2a3140" : variant.includes("alt-key") ? "#303645" : "#242a38";
-        const fg = isMacro || variant.includes("accent-key") ? "#ffffff" : variant.includes("compose-key") ? "#4cc38a" : variant.includes("alt-key") || variant.includes("space-key") ? "#9aa4ba" : "#e8ebf2";
+        const bg = previewColors.backgroundCss;
+        const fg = previewColors.textCss;
         ctx.fillStyle = bg;
         drawRoundRect(ctx, keyX, y, keyW, rowHeight, 4);
         ctx.fill();
         ctx.lineWidth = isMacro ? 2 : 1;
-        ctx.strokeStyle = isMacro ? "#4cc38a" : variant.includes("accent-key") ? "#4f8cff" : "#2a3142";
+        ctx.strokeStyle = previewColors.borderCss;
         ctx.stroke();
         drawCenteredText(ctx, previewTitleFromObj(key), keyX, y, keyW, rowHeight, variant.includes("alt-key") ? 16 : variant.includes("macro-key") || variant.includes("accent-key") ? 20 : 23, fg);
         const alt = keySubText(key);
         if (alt) {
-          drawRightTopText(ctx, alt, keyX, y, keyW, 10, "#9aa4ba");
+          drawRightTopText(ctx, alt, keyX, y, keyW, 10, previewColors.altTextCss);
         }
         x += slotWidth;
       });
@@ -3171,8 +4122,8 @@
     return canvas;
   }
 
-  function composeQrLongImage(bundle, profile) {
-    const labels = buildChunkLabels(bundle, profile);
+  function composeQrLongImage(bundle, profile, transferType = TRANSFER_TYPE_LAYOUT) {
+    const labels = buildChunkLabels(bundle, profile, transferType);
     const pageHeight = LONG_IMAGE_PAGE_PADDING + LONG_IMAGE_QR_SIZE + LONG_IMAGE_TEXT_GAP + LONG_IMAGE_TEXT_SIZE + LONG_IMAGE_PAGE_PADDING;
     const width = LONG_IMAGE_QR_SIZE + LONG_IMAGE_PAGE_PADDING * 2;
     const previewCanvas = renderPreviewCanvas(width);
@@ -3207,10 +4158,11 @@
     });
   }
 
-  async function downloadQrLongImage(bundle, profile) {
-    const canvas = composeQrLongImage(bundle, profile);
+  async function downloadQrLongImage(bundle, profile, transferType = TRANSFER_TYPE_LAYOUT) {
+    const canvas = composeQrLongImage(bundle, profile, transferType);
     const blob = await canvasToPngBlob(canvas);
-    const fileName = `text-keyboard-layout-qr-${Date.now()}.png`;
+    const prefix = transferType === TRANSFER_TYPE_THEME ? "text-keyboard-theme-qr" : "text-keyboard-layout-qr";
+    const fileName = `${prefix}-${Date.now()}.png`;
     downloadBlob(fileName, blob);
   }
 
@@ -3227,7 +4179,7 @@
     const index = Number(seq.slice(0, slash));
     const total = Number(seq.slice(slash + 1));
     const crc = Number(crcText);
-    if (!/^L[0-9a-f]{11}(?:~[A-Za-z0-9_-]+)?$/.test(transferId)) return null;
+    if (!/^[A-Z][0-9a-f]{11}(?:~[A-Za-z0-9_-]+)?$/i.test(transferId)) return null;
     if (!Number.isInteger(index) || !Number.isInteger(total) || index < 1 || total < 1 || index > total) return null;
     if (!Number.isInteger(crc) || crc < 0) return null;
     if (total > 512) return null;
@@ -3261,6 +4213,10 @@
     return `${chunk.transferId}|${chunk.crc}|${chunk.total}`;
   }
 
+  function detectTransferType(transferId) {
+    return String(transferId || "").charAt(0).toUpperCase();
+  }
+
   function readFileAsImage(file) {
     if (!window.WebEditorQrImport) throw new Error("二维码导入模块未加载");
     return window.WebEditorQrImport.readFileAsImage(file);
@@ -3277,12 +4233,16 @@
     });
   }
 
-  async function decodeLayoutFromQrChunks(chunkTexts) {
+  async function decodeQrChunksToJson(chunkTexts, expectedType) {
     const parsed = chunkTexts.map(parseQrChunkText).filter(Boolean);
     if (!parsed.length) throw new Error("未识别到有效二维码分片");
+    const typed = parsed.filter((chunk) => detectTransferType(chunk.transferId) === expectedType);
+    if (!typed.length) {
+      throw new Error(`二维码类型不匹配，当前导入仅支持类型 ${expectedType}`);
+    }
 
     const byTransfer = new Map();
-    parsed.forEach((chunk) => {
+    typed.forEach((chunk) => {
       const key = chunkGroupKey(chunk);
       if (!byTransfer.has(key)) byTransfer.set(key, []);
       byTransfer.get(key).push(chunk);
@@ -3354,8 +4314,204 @@
       raw = window.lzma_wasm.decompress(compressed);
     }
     const text = new TextDecoder().decode(raw);
-    const layout = normalizeLayoutObject(JSON.parse(text));
-    return { layout, transferId, total };
+    return { text, transferId, total };
+  }
+
+  async function decodeLayoutFromQrChunks(chunkTexts) {
+    const decoded = await decodeQrChunksToJson(chunkTexts, TRANSFER_TYPE_LAYOUT);
+    const layout = normalizeLayoutObject(JSON.parse(decoded.text));
+    return { layout, transferId: decoded.transferId, total: decoded.total };
+  }
+
+  async function decodeThemeFromQrChunks(chunkTexts) {
+    const decoded = await decodeQrChunksToJson(chunkTexts, TRANSFER_TYPE_THEME);
+    const raw = JSON.parse(decoded.text);
+    if (raw && raw.schema && raw.schema !== "f5a-theme-qr-v1") {
+      throw new Error(`不支持的主题二维码 schema：${raw.schema}`);
+    }
+    const themeData = normalizeImportedThemePayload(raw);
+    return { themeData, transferId: decoded.transferId, total: decoded.total };
+  }
+
+  function inferMimeTypeByName(name) {
+    const ext = String(name || "").split(".").pop()?.toLowerCase();
+    if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+    if (ext === "webp") return "image/webp";
+    if (ext === "bmp") return "image/bmp";
+    if (ext === "gif") return "image/gif";
+    return "image/png";
+  }
+
+  function inferExtensionByMime(mime) {
+    const normalized = String(mime || "").toLowerCase();
+    if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpg";
+    if (normalized.includes("webp")) return "webp";
+    if (normalized.includes("bmp")) return "bmp";
+    if (normalized.includes("gif")) return "gif";
+    return "png";
+  }
+
+  function normalizeZipEntryPath(path) {
+    return String(path || "").replace(/^\/+/, "").replace(/\\/g, "/");
+  }
+
+  function normalizeRelativeThemeAssetPath(path, fallbackName) {
+    const fallback = String(fallbackName || "").trim() || "background.png";
+    let raw = String(path || "").trim();
+    if (!raw) return fallback;
+    raw = raw.replace(/\\/g, "/").replace(/^file:\/*/i, "/");
+    const filesMarker = "/files/";
+    const filesIndex = raw.lastIndexOf(filesMarker);
+    if (filesIndex >= 0) {
+      raw = raw.slice(filesIndex + filesMarker.length);
+    } else if (/^[A-Za-z]:\//.test(raw) || raw.startsWith("/") || raw.startsWith("content:")) {
+      raw = raw.split("/").pop() || "";
+    }
+    raw = raw.replace(/^\.\/+/, "").replace(/^\/+/, "").split(/[?#]/)[0];
+    raw = raw.replace(/^theme\//i, "");
+    const parts = raw.split("/").map((part) => part.trim()).filter((part) => part && part !== "." && part !== "..");
+    if (!parts.length) return fallback;
+    const normalized = parts.join("/");
+    return normalizeZipEntryPath(normalized || fallback) || fallback;
+  }
+
+  function buildThemeBackgroundSpecForLocalImage(theme, file) {
+    const fallbackExt = String(file?.name || "").includes(".")
+      ? String(file.name).split(".").pop().toLowerCase()
+      : inferExtensionByMime(file?.type || "image/png");
+    const ext = fallbackExt || "png";
+    const safeThemeName = String(theme?.name || "theme").replace(/[\\/:*?"<>|]/g, "_") || "theme";
+    const fallbackCropped = `${safeThemeName}/${safeThemeName}.cropped.${ext}`;
+    const fallbackSrc = `${safeThemeName}/${safeThemeName}.src.${ext}`;
+    const source = theme?.backgroundImageObject || null;
+    let croppedFilePath = normalizeRelativeThemeAssetPath(source?.croppedFilePath, fallbackCropped);
+    let srcFilePath = normalizeRelativeThemeAssetPath(source?.srcFilePath, fallbackSrc);
+    if (croppedFilePath === srcFilePath) srcFilePath = fallbackSrc;
+    return {
+      croppedFilePath,
+      srcFilePath,
+      brightness: Number.isFinite(Number(source?.brightness)) ? Number(source.brightness) : 70,
+      cropRect: source?.cropRect ?? null,
+      cropRotation: Number.isFinite(Number(source?.cropRotation)) ? Number(source.cropRotation) : 0,
+      blurRadius: Number.isFinite(Number(source?.blurRadius)) ? Number(source.blurRadius) : 0
+    };
+  }
+
+  function buildThemeZipBackgroundSpec(theme, ext, baseName) {
+    const source = theme && theme.backgroundImageObject ? theme.backgroundImageObject : null;
+    const fallbackCropped = `${baseName}.cropped.${ext}`;
+    const fallbackSrc = `${baseName}.src.${ext}`;
+    const croppedFilePath = normalizeRelativeThemeAssetPath(source?.croppedFilePath, fallbackCropped);
+    let srcFilePath = normalizeRelativeThemeAssetPath(source?.srcFilePath, fallbackSrc);
+    if (srcFilePath === croppedFilePath) srcFilePath = fallbackSrc;
+    return {
+      croppedFilePath,
+      srcFilePath,
+      brightness: Number.isFinite(Number(source?.brightness)) ? Number(source.brightness) : 70,
+      cropRect: source?.cropRect ?? null,
+      cropRotation: Number.isFinite(Number(source?.cropRotation)) ? Number(source.cropRotation) : 0,
+      blurRadius: Number.isFinite(Number(source?.blurRadius)) ? Number(source.blurRadius) : 0
+    };
+  }
+
+  function themeHasBackground(theme) {
+    return !!(theme && (theme.backgroundImageObject || (typeof theme.backgroundImage === "string" && theme.backgroundImage.trim())));
+  }
+
+  async function readThemeBackgroundBlob(theme) {
+    if (!themeHasBackground(theme)) return null;
+    const sourceUrl = theme.backgroundImage || resolveThemeAssetUrl(theme.backgroundImageObject);
+    if (!sourceUrl) return null;
+    const resp = await fetch(sourceUrl);
+    if (!resp.ok) throw new Error("无法读取主题背景图片数据");
+    return await resp.blob();
+  }
+
+  async function exportThemeAsZip(theme) {
+    if (!window.JSZip) throw new Error("JSZip 未加载");
+    const blob = await readThemeBackgroundBlob(theme);
+    if (!blob) throw new Error("当前主题无可导出的背景图片");
+    const ext = inferExtensionByMime(blob.type);
+    const baseName = (theme.name || "theme").replace(/[\\/:*?"<>|]/g, "_");
+    const spec = buildThemeZipBackgroundSpec(theme, ext, baseName);
+    const exportTheme = {
+      name: theme.name,
+      isDark: !!theme.isDark,
+      backgroundImage: {
+        croppedFilePath: spec.croppedFilePath,
+        srcFilePath: spec.srcFilePath,
+        brightness: Number.isFinite(Number(spec.brightness)) ? Number(spec.brightness) : 70,
+        cropRect: spec.cropRect ?? null,
+        cropRotation: Number.isFinite(Number(spec.cropRotation)) ? Number(spec.cropRotation) : 0,
+        blurRadius: Number.isFinite(Number(spec.blurRadius)) ? Number(spec.blurRadius) : 0
+      },
+      colors: deepClone(theme.colors)
+    };
+    const zip = new window.JSZip();
+    zip.file(`${baseName}.json`, `${prettyJson(exportTheme)}\n`);
+    zip.file(exportTheme.backgroundImage.croppedFilePath, blob);
+    zip.file(exportTheme.backgroundImage.srcFilePath, blob);
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    downloadBlob(`${baseName}.zip`, zipBlob);
+  }
+
+  async function decodeThemeFromZipFile(file) {
+    if (!window.JSZip) throw new Error("JSZip 未加载");
+    const zip = await window.JSZip.loadAsync(await file.arrayBuffer());
+    const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+    const jsonEntry = entries.find((entry) => entry.name.toLowerCase().endsWith(".json"));
+    if (!jsonEntry) throw new Error("ZIP 内未找到主题 JSON");
+    const raw = await jsonEntry.async("string");
+    const parsed = JSON.parse(raw);
+    const themeData = normalizeImportedThemePayload(parsed);
+    if (themeData.backgroundImage) return themeData;
+
+    const bgObj = themeData.backgroundImageObject;
+    if (!bgObj || typeof bgObj !== "object") return themeData;
+    const fallbackExt = inferExtensionByMime(file.type || "image/png");
+    const relativeBgObj = normalizeThemeBackgroundImageObject({
+      ...bgObj,
+      croppedFilePath: normalizeRelativeThemeAssetPath(bgObj.croppedFilePath, `theme.cropped.${fallbackExt}`),
+      srcFilePath: normalizeRelativeThemeAssetPath(bgObj.srcFilePath, `theme.src.${fallbackExt}`)
+    });
+    if (!relativeBgObj) return themeData;
+    const nameMap = new Map();
+    entries.forEach((entry) => {
+      const normalized = normalizeZipEntryPath(entry.name);
+      nameMap.set(entry.name, entry);
+      nameMap.set(normalized, entry);
+      nameMap.set(entry.name.split(/[\\/]/).pop(), entry);
+    });
+    const croppedName = normalizeZipEntryPath(relativeBgObj.croppedFilePath || "");
+    const srcName = normalizeZipEntryPath(relativeBgObj.srcFilePath || "");
+    const imgEntry = nameMap.get(croppedName) || nameMap.get(srcName) ||
+      nameMap.get(croppedName.split("/").pop()) || nameMap.get(srcName.split("/").pop()) || null;
+    if (!imgEntry) return themeData;
+    const mime = inferMimeTypeByName(imgEntry.name);
+    const blob = await imgEntry.async("blob");
+    const typedBlob = blob.type ? blob : new Blob([blob], { type: mime });
+    const previewUrl = URL.createObjectURL(typedBlob);
+    return {
+      ...themeData,
+      backgroundImage: previewUrl,
+      backgroundImageObject: relativeBgObj
+    };
+  }
+
+  async function importThemeFromQrLongImage(file) {
+    if (!file) return;
+    state.themeQr = { chunks: [], index: 0, transferId: "", themeSignature: "" };
+    updateThemeQrUi();
+    setStatus("theme-qr-meta", "正在读取主题二维码长图…", "");
+    const image = await readFileAsImage(file);
+    const chunkTexts = await decodeQrTextFromImage(image, (msg) => setStatus("theme-qr-meta", msg, ""));
+    if (!chunkTexts.length) throw new Error("未识别到有效二维码分片，请确认长图完整清晰");
+    setStatus("theme-qr-meta", "正在校验并解码主题分片…", "");
+    const decoded = await decodeThemeFromQrChunks(chunkTexts);
+    const ok = confirm(`确认导入二维码主题？\ntransferId=${decoded.transferId}\n分片数=${decoded.total}`);
+    if (!ok) return;
+    const imported = addImportedThemeEntry(decoded.themeData, "已导入二维码主题");
+    setStatus("theme-qr-meta", `导入成功：${imported.name}（${decoded.total} 个分片）`, "ok");
   }
 
   async function importLayoutFromQrLongImage(file) {
@@ -3397,6 +4553,27 @@
     if (!has) return;
     const filled = makeQrCanvas(state.qr.chunks[state.qr.index], canvas.width);
     ctx.drawImage(filled, 0, 0);
+  }
+
+  function updateThemeQrUi() {
+    const isStale = state.themeQr.themeSignature && state.themeQr.themeSignature !== currentThemeSignature();
+    if (isStale) state.themeQr = { chunks: [], index: 0, transferId: "", themeSignature: "" };
+    const has = state.themeQr.chunks.length > 0;
+    const idx = el("theme-qr-index");
+    if (idx) idx.textContent = `${has ? state.themeQr.index + 1 : 0} / ${state.themeQr.chunks.length}`;
+    const canvas = el("theme-qr-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!has) return;
+    const filled = makeQrCanvas(state.themeQr.chunks[state.themeQr.index], canvas.width);
+    ctx.drawImage(filled, 0, 0);
+  }
+
+  function openThemeQrPreviewDialog() {
+    const dialog = el("theme-qr-dialog");
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
   }
 
   function setupQrActions() {
@@ -3468,6 +4645,59 @@
     */
   }
 
+  function setupThemeQrActions() {
+    el("theme-share-current").addEventListener("click", async () => {
+      try {
+        const theme = currentThemeEntry();
+        if (!theme) throw new Error("未找到当前主题");
+        if (themeHasBackground(theme)) {
+          await exportThemeAsZip(theme);
+          setStatus("theme-qr-meta", `已下载主题 ZIP：${theme.name}`, "ok");
+          return;
+        }
+        const bundle = await generateThemeQrBundle();
+        state.themeQr = {
+          chunks: bundle.chunks,
+          index: 0,
+          transferId: bundle.transferId,
+          themeSignature: currentThemeSignature()
+        };
+        setStatus("theme-qr-meta", `主题二维码：${bundle.total} 个分片，transferId=${bundle.transferId}`, "ok");
+        updateThemeQrUi();
+        openThemeQrPreviewDialog();
+      } catch (e) {
+        setStatus("theme-qr-meta", `主题分享失败：${e.message}`, "err");
+      }
+    });
+    el("theme-download-qr-preview").addEventListener("click", async () => {
+      if (!state.themeQr.chunks.length) {
+        setStatus("theme-qr-meta", "请先生成主题二维码", "err");
+        return;
+      }
+      try {
+        const bundle = {
+          chunks: state.themeQr.chunks.slice(),
+          total: state.themeQr.chunks.length,
+          transferId: state.themeQr.transferId
+        };
+        await downloadQrLongImage(bundle, null, TRANSFER_TYPE_THEME);
+        setStatus("theme-qr-meta", `已下载主题二维码长图：${bundle.total} 个分片`, "ok");
+      } catch (e) {
+        setStatus("theme-qr-meta", `主题长图导出失败：${e.message}`, "err");
+      }
+    });
+    el("theme-prev-qr").addEventListener("click", () => {
+      if (!state.themeQr.chunks.length) return;
+      state.themeQr.index = (state.themeQr.index - 1 + state.themeQr.chunks.length) % state.themeQr.chunks.length;
+      updateThemeQrUi();
+    });
+    el("theme-next-qr").addEventListener("click", () => {
+      if (!state.themeQr.chunks.length) return;
+      state.themeQr.index = (state.themeQr.index + 1) % state.themeQr.chunks.length;
+      updateThemeQrUi();
+    });
+  }
+
   function escapeHtml(s) {
     return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   }
@@ -3478,8 +4708,11 @@
 
   async function main() {
     await initializeBuiltinData();
+    initTabs();
     initLayoutTab();
+    initThemeTab();
     setupQrActions();
+    setupThemeQrActions();
     const previewPanel = document.querySelector(".keyboard-preview-panel");
     if (previewPanel) {
       previewPanel.addEventListener("toggle", () => {
@@ -3490,11 +4723,16 @@
     state.layoutHeightObserver = new ResizeObserver(() => syncJsonEditorHeight());
     const mainCardEl = document.getElementById("layout-main-column-card") || document.querySelector(".layout-main-column-card");
     if (mainCardEl) state.layoutHeightObserver.observe(mainCardEl);
+    state.themeHeightObserver = new ResizeObserver(() => syncThemeJsonHeight());
+    const themeMainCardEl = document.querySelector(".theme-main-card");
+    if (themeMainCardEl) state.themeHeightObserver.observe(themeMainCardEl);
     window.addEventListener("resize", syncJsonEditorHeight);
+    window.addEventListener("resize", syncThemeJsonHeight);
     window.addEventListener("resize", updateFixedChromeMetrics);
     window.addEventListener("resize", () => requestAnimationFrame(fitLayoutPreviewText));
     updateFixedChromeMetrics();
     setStatus("layout-qr-meta", "点击“生成二维码”后会自动按 App 协议分片编码", "");
+    setStatus("theme-qr-meta", "点击“分享当前激活主题”可自动导出 ZIP 或二维码长图", "");
   }
 
   main();
