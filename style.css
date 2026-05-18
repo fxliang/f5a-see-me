@@ -5,6 +5,7 @@
   --text: #e8ebf2;
   --sub: #9aa4ba;
   --primary: #4f8cff;
+  --macro: #3f8f6a;
   --border: #2a3142;
   --ok: #4cc38a;
   --err: #ff6b6b;
@@ -352,6 +353,17 @@ input[type="checkbox"] {
   color: white;
 }
 
+.layout-chip.macro-key {
+  background: var(--macro);
+  border-color: var(--macro);
+  border-width: 2px;
+  color: white;
+}
+
+.layout-chip.compose-key {
+  color: var(--macro);
+}
+
 .layout-chip.space-key {
   min-width: 110px;
   background: #2a3140;
@@ -399,6 +411,7 @@ input[type="checkbox"] {
 .key-list {
   flex: 1;
   min-height: 42px;
+  cursor: grab;
 }
 
 .layout-preview {
@@ -445,12 +458,19 @@ input[type="checkbox"] {
   position: relative;
   overflow: hidden;
   padding: 4px;
-  font-size: 23px;
+  font-size: clamp(14px, 42cqw, 23px);
   cursor: default;
+  container-type: inline-size;
 }
 
 .layout-key-main {
   line-height: 1;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 
 .row-add-key,
@@ -478,7 +498,7 @@ input[type="checkbox"] {
 .layout-key.alt-key {
   background: #303645;
   color: var(--sub);
-  font-size: 16px;
+  font-size: clamp(12px, 34cqw, 16px);
   font-weight: 700;
 }
 
@@ -486,12 +506,24 @@ input[type="checkbox"] {
   background: var(--primary);
   border-color: var(--primary);
   color: white;
-  font-size: 20px;
+  font-size: clamp(13px, 38cqw, 20px);
+}
+
+.layout-key.macro-key {
+  background: var(--macro);
+  border-color: var(--macro);
+  border-width: 2px;
+  color: white;
+  font-size: clamp(13px, 38cqw, 20px);
+}
+
+.layout-key.compose-key {
+  color: var(--primary);
 }
 
 .layout-key.space-key {
   background: #2a3140;
-  font-size: 18px;
+  font-size: clamp(12px, 20cqw, 18px);
   color: var(--sub);
 }
 
@@ -499,7 +531,12 @@ input[type="checkbox"] {
   position: absolute;
   top: 4px;
   right: 6px;
-  font-size: 10px;
+  max-width: calc(100% - 12px);
+  overflow: hidden;
+  text-align: right;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-size: clamp(7px, 18cqw, 10px);
   color: var(--sub);
   line-height: 1;
 }

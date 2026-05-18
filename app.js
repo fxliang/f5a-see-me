@@ -1,15 +1,15 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-16T13:48+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-18T15:04+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
   const MAX_CHUNK_BYTES = 1500;
   const TRANSFER_TYPE_LAYOUT = "L";
-  const LONG_IMAGE_QR_SIZE = 800;
-  const LONG_IMAGE_PAGE_PADDING = 8;
+  const LONG_IMAGE_QR_SIZE = 768;
+  const LONG_IMAGE_PAGE_PADDING = 24;
   const LONG_IMAGE_TEXT_SIZE = 22;
-  const LONG_IMAGE_TEXT_GAP = 8;
+  const LONG_IMAGE_TEXT_GAP = 12;
   const DEFAULT_SUBMODE = "default";
   const META_KEY = "__meta__";
   const HEIGHT_KEY = "keyboard_height_percent";
@@ -568,20 +568,48 @@
 
   function renderLayoutPreview() {
     const rows = getRows();
+    const rowPercents = resolveRowHeightPercents(rows);
     const root = el("layout-preview");
-    root.innerHTML = rows.map((row) => {
-      const rowHeight = effectiveRowHeight(row);
+    root.innerHTML = rows.map((row, rowIndex) => {
+      const rowHeight = effectiveRowHeight(rowPercents[rowIndex] ?? 0);
       const widths = resolveRegularRowWidths(row);
       return `<div class="layout-row" style="--row-height:${rowHeight}px"><div class="keys">${row.map((key, keyIndex) => {
         const w = widths[keyIndex] || 0;
         const widthPercent = `${(w * 100).toFixed(6)}%`;
         const alt = keySubText(key) ? `<span class="layout-key-alt">${escapeHtml(keySubText(key))}</span>` : "";
-        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${keyVariantClass(key)}"><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
+        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)}"><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
       }).join("")}</div></div>`;
     }).join("");
+    requestAnimationFrame(fitLayoutPreviewText);
     const height = getHeightOverride();
     setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${height ? `，键盘高度 ${height}%` : ""}`, "");
     updateFixedChromeMetrics();
+  }
+
+  function fitLayoutPreviewText() {
+    const canvas = fitLayoutPreviewText.canvas || (fitLayoutPreviewText.canvas = document.createElement("canvas"));
+    const ctx = canvas.getContext("2d");
+    const fitText = (node, maxSize, minSize, weight, reserve = 8) => {
+      const key = node.closest(".layout-key");
+      if (!key) return;
+      const value = node.textContent || "";
+      const width = Math.max(0, key.clientWidth - reserve);
+      if (!value || width <= 0) return;
+      let size = maxSize;
+      ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
+      while (size > minSize && ctx.measureText(value).width > width) {
+        size -= 1;
+        ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
+      }
+      node.style.fontSize = `${size}px`;
+    };
+
+    document.querySelectorAll("#layout-preview .layout-key-main").forEach((node) => {
+      const key = node.closest(".layout-key");
+      const max = key?.classList.contains("alt-key") ? 16 : key?.classList.contains("macro-key") || key?.classList.contains("accent-key") ? 20 : key?.classList.contains("space-key") ? 18 : 23;
+      fitText(node, max, 7, 600, 8);
+    });
+    document.querySelectorAll("#layout-preview .layout-key-alt").forEach((node) => fitText(node, 10, 6, 500, 12));
   }
 
   function updateFixedChromeMetrics() {
@@ -597,15 +625,56 @@
     });
   }
 
-  function effectiveRowHeight(row) {
-    const h = row.reduce((max, key) => Math.max(max, Number(key.rowHeightPercent) || 0), 0);
+  function defaultRowHeightPercent(rowCount) {
+    if (rowCount <= 0) return 25;
+    return Math.max(1, 100 / rowCount);
+  }
+
+  function resolveRowHeightPercents(rows) {
+    if (!rows.length) return [];
+
+    const parsedPercents = rows.map((row) => {
+      const rowMax = row
+        .map((key) => Number(key.rowHeightPercent))
+        .filter((value) => Number.isFinite(value) && value >= 1 && value <= 100)
+        .reduce((max, value) => Math.max(max, value), 0);
+      return rowMax > 0 ? rowMax : null;
+    });
+    const definedSum = parsedPercents.filter((value) => value != null).reduce((sum, value) => sum + value, 0);
+    const undefinedCount = parsedPercents.filter((value) => value == null).length;
+
+    const distributed = undefinedCount === 0
+      ? parsedPercents.map((value) => value || 0)
+      : (() => {
+          const remaining = Math.max(0, 100 - definedSum);
+          const avg = remaining / undefinedCount;
+          return parsedPercents.map((value) => value != null ? value : avg);
+        })();
+
+    const sum = distributed.reduce((acc, value) => acc + value, 0);
+    if (sum <= 0) {
+      const fallback = defaultRowHeightPercent(rows.length);
+      return Array.from({ length: rows.length }, () => fallback);
+    }
+
+    return distributed.map((value) => value * 100 / sum);
+  }
+
+  function effectiveRowHeight(percent) {
+    const h = Number(percent) || 0;
     return h > 0 ? Math.max(34, Math.round(48 * h / 25)) : 42;
   }
 
   function keyWeight(key) {
-    const n = Number(key.weight);
-    if (Number.isFinite(n)) return n;
+    if (key && Object.prototype.hasOwnProperty.call(key, "weight")) {
+      const n = Number(key.weight);
+      if (Number.isFinite(n)) return n;
+    }
     return defaultKeyWeight(key);
+  }
+
+  function isAutoWidthKey(key) {
+    return key?.type === "AlphabetKey" || key?.type === "SymbolKey" || key?.type === "MacroKey";
   }
 
   function defaultKeyWeight(key) {
@@ -632,20 +701,25 @@
 
   function resolveRegularRowWidths(row) {
     if (!row.length) return [];
-    const fixedSum = row.reduce((sum, key) => {
-      const width = keyWeight(key);
-      return sum + (width > 0 ? width : 0);
-    }, 0);
-    const flexCount = row.filter((key) => keyWeight(key) <= 0).length;
+    const entries = row.map((key) => {
+      const hasWeight = key && Object.prototype.hasOwnProperty.call(key, "weight");
+      const defaultWidth = defaultKeyWeight(key);
+      const raw = hasWeight ? Number(key.weight) : defaultWidth;
+      const width = Number.isFinite(raw) ? raw : defaultWidth;
+      return {
+        width: Math.max(0, width),
+        auto: hasWeight ? width <= 0 : defaultWidth <= 0
+      };
+    });
+    const fixedSum = entries.reduce((sum, item) => sum + (item.auto ? 0 : item.width), 0);
+    const flexCount = entries.filter((item) => item.auto).length;
     const remaining = Math.max(0, 1 - fixedSum);
     const flexWidth = flexCount > 0 ? remaining / flexCount : 0;
-    return row.map((key) => {
-      const width = keyWeight(key);
-      return width > 0 ? width : flexWidth;
-    });
+    return entries.map((item) => item.auto ? flexWidth : item.width);
   }
 
   function keyVariantClass(key) {
+    const classes = [];
     switch (key?.type) {
       case "CapsKey":
       case "LayoutSwitchKey":
@@ -653,14 +727,35 @@
       case "SymbolKey":
       case "LanguageKey":
       case "BackspaceKey":
-        return "alt-key";
+        classes.push("alt-key");
+        break;
       case "SpaceKey":
-        return "space-key";
+        classes.push("space-key");
+        break;
       case "ReturnKey":
-        return "accent-key";
-      default:
-        return "";
+        classes.push("accent-key");
+        break;
     }
+    if (key?.type === "MacroKey") classes.push("macro-key");
+    if (key?.composeOverride && key?.type !== "MacroKey") classes.push("compose-key");
+    return classes.join(" ");
+  }
+
+  function keyVariantStyle(key) {
+    if (key?.type === "MacroKey") {
+      return "background:#3f8f6a;border-color:#3f8f6a;color:#fff;border-width:2px;";
+    }
+    if (key?.composeOverride && key?.type !== "MacroKey") {
+      return "color:#3f8f6a;";
+    }
+    return "";
+  }
+
+  function previewVariantClass(key) {
+    return keyVariantClass(key)
+      .split(/\s+/)
+      .filter((cls) => cls && cls !== "macro-key" && cls !== "compose-key")
+      .join(" ");
   }
 
   function renderLayoutEditor() {
@@ -674,7 +769,7 @@
       block.dataset.rowIndex = String(rowIndex);
       block.innerHTML = `
         <span class="row-drag-handle" title="拖拽行排序">☰</span>
-        <div class="chip-list key-list" data-row-index="${rowIndex}"></div>
+        <div class="chip-list key-list" data-row-index="${rowIndex}" title="按住空白处可上下拖拽调整行顺序"></div>
         <button class="row-add-key" title="新增按键">+</button>
         <button class="row-delete" title="删除行">🗑</button>
       `;
@@ -686,6 +781,7 @@
       row.forEach((key, keyIndex) => {
         const keyBtn = document.createElement("button");
         keyBtn.className = `layout-chip ${keyVariantClass(key)}`;
+        keyBtn.style.cssText = keyVariantStyle(key);
         if (state.dragKey?.row === rowIndex && state.dragKey?.index === keyIndex) {
           keyBtn.classList.add("dragging");
         }
@@ -2983,26 +3079,42 @@
     ctx.closePath();
   }
 
-  function drawCenteredText(ctx, text, x, y, width, height, fontSize, color, weight = 600) {
+  function drawCenteredText(ctx, text, x, y, width, height, fontSize, color, weight = 600, minSize = 7) {
     const value = String(text || "");
     ctx.fillStyle = color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    let size = fontSize;
+    let size = Math.min(fontSize, Math.max(minSize, Math.floor(width * 0.42)));
     ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
-    while (size > 10 && ctx.measureText(value).width > width - 8) {
+    while (size > minSize && ctx.measureText(value).width > width - 8) {
       size -= 1;
       ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
     }
     ctx.fillText(value, x + width / 2, y + height / 2);
   }
 
+  function drawRightTopText(ctx, text, x, y, width, fontSize, color, weight = 500, minSize = 6) {
+    const value = String(text || "");
+    if (!value) return;
+    ctx.fillStyle = color;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "top";
+    let size = Math.min(fontSize, Math.max(minSize, Math.floor(width * 0.18)));
+    ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
+    while (size > minSize && ctx.measureText(value).width > width - 8) {
+      size -= 1;
+      ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
+    }
+    ctx.fillText(value, x + width - 6, y + 4);
+  }
+
   function renderPreviewCanvas(targetWidth) {
     const rows = getRows();
-    const previewPadding = 10;
-    const rowGap = 8;
-    const keyboardWidth = Math.min(targetWidth - previewPadding * 2, 720);
-    const rowHeights = rows.map(effectiveRowHeight);
+    const previewPadding = 24;
+    const rowGap = 0;
+    const keyboardWidth = Math.max(1, targetWidth - previewPadding * 2);
+    const rowPercents = resolveRowHeightPercents(rows);
+    const rowHeights = rowPercents.map(effectiveRowHeight);
     const contentHeight = rowHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, rows.length - 1) * rowGap;
     const height = Math.max(1, contentHeight + previewPadding * 2);
     const canvas = document.createElement("canvas");
@@ -3019,27 +3131,26 @@
     rows.forEach((row, rowIndex) => {
       const rowHeight = rowHeights[rowIndex];
       const widths = resolveRegularRowWidths(row);
-      let x = (targetWidth - keyboardWidth) / 2;
+      const rowWidth = widths.reduce((sum, width) => sum + width, 0);
+      let x = (targetWidth - keyboardWidth * rowWidth) / 2;
       row.forEach((key, keyIndex) => {
         const slotWidth = keyboardWidth * (widths[keyIndex] || 0);
         const keyX = x + 3;
         const keyW = Math.max(1, slotWidth - 6);
         const variant = keyVariantClass(key);
-        const bg = variant === "accent-key" ? "#4f8cff" : variant === "space-key" ? "#2a3140" : variant === "alt-key" ? "#303645" : "#242a38";
-        const fg = variant === "accent-key" ? "#ffffff" : variant === "alt-key" || variant === "space-key" ? "#9aa4ba" : "#e8ebf2";
+        const isMacro = variant.includes("macro-key");
+        const bg = isMacro ? "#4cc38a" : variant.includes("accent-key") ? "#4f8cff" : variant.includes("space-key") ? "#2a3140" : variant.includes("alt-key") ? "#303645" : "#242a38";
+        const fg = isMacro || variant.includes("accent-key") ? "#ffffff" : variant.includes("compose-key") ? "#4cc38a" : variant.includes("alt-key") || variant.includes("space-key") ? "#9aa4ba" : "#e8ebf2";
         ctx.fillStyle = bg;
         drawRoundRect(ctx, keyX, y, keyW, rowHeight, 4);
         ctx.fill();
-        ctx.strokeStyle = variant === "accent-key" ? "#4f8cff" : "#2a3142";
+        ctx.lineWidth = isMacro ? 2 : 1;
+        ctx.strokeStyle = isMacro ? "#4cc38a" : variant.includes("accent-key") ? "#4f8cff" : "#2a3142";
         ctx.stroke();
-        drawCenteredText(ctx, previewTitleFromObj(key), keyX, y, keyW, rowHeight, variant === "alt-key" ? 16 : 23, fg);
+        drawCenteredText(ctx, previewTitleFromObj(key), keyX, y, keyW, rowHeight, variant.includes("alt-key") ? 16 : variant.includes("macro-key") || variant.includes("accent-key") ? 20 : 23, fg);
         const alt = keySubText(key);
         if (alt) {
-          ctx.fillStyle = "#9aa4ba";
-          ctx.font = "500 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
-          ctx.textAlign = "right";
-          ctx.textBaseline = "top";
-          ctx.fillText(String(alt), keyX + keyW - 6, y + 4);
+          drawRightTopText(ctx, alt, keyX, y, keyW, 10, "#9aa4ba");
         }
         x += slotWidth;
       });
@@ -3369,6 +3480,7 @@
     if (mainCardEl) state.layoutHeightObserver.observe(mainCardEl);
     window.addEventListener("resize", syncJsonEditorHeight);
     window.addEventListener("resize", updateFixedChromeMetrics);
+    window.addEventListener("resize", () => requestAnimationFrame(fitLayoutPreviewText));
     updateFixedChromeMetrics();
     setStatus("layout-qr-meta", "点击“生成二维码”后会自动按 App 协议分片编码", "");
   }
