@@ -259,10 +259,6 @@
     "Meta_L", "Meta_R", "Super_L", "Super_R", "Hyper_L", "Hyper_R",
     "Mode_switch", "ISO_Level3_Shift", "ISO_Level5_Shift"
   ]);
-  const commonColorPalette = [
-    "#000000", "#FFFFFF", "#F44336", "#E91E63", "#9C27B0", "#673AB7", "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
-    "#009688", "#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107", "#FF9800", "#FF5722", "#795548", "#9E9E9E"
-  ];
   const macroFcitxKeys = [
     "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
     "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
@@ -475,10 +471,6 @@
   function toArgbHex(color) {
     const u = (Number(color) || 0) >>> 0;
     return `#${u.toString(16).toUpperCase().padStart(8, "0")}`;
-  }
-
-  function toRgbHex(color) {
-    return toArgbHex(color).slice(3);
   }
 
   function argbToCss(color) {
@@ -2132,10 +2124,6 @@
     return defaultKeyWeight(key);
   }
 
-  function isAutoWidthKey(key) {
-    return key?.type === "AlphabetKey" || key?.type === "SymbolKey" || key?.type === "MacroKey";
-  }
-
   function defaultKeyWeight(key) {
     switch (key?.type) {
       case "CapsKey":
@@ -2895,31 +2883,6 @@
     }
   }
 
-  function setStructuredField(id, value) {
-    const node = el(id);
-    if (!node) return;
-    if (value == null) {
-      node.value = "";
-    } else if (typeof value === "string") {
-      node.value = value;
-    } else {
-      node.value = prettyJson(value);
-    }
-  }
-
-  function applyOptionalStructuredRaw(target, key, rawValue) {
-    const raw = String(rawValue ?? "").trim();
-    if (!raw) {
-      delete target[key];
-      return;
-    }
-    if (raw.startsWith("{") || raw.startsWith("[")) {
-      target[key] = JSON.parse(raw);
-    } else {
-      target[key] = raw;
-    }
-  }
-
   function openDisplayTextDialog() {
     updateDraftFromMainFields();
     const key = keyDialogState.draft || {};
@@ -3512,12 +3475,6 @@
     return `#${unsigned.toString(16).toUpperCase().padStart(8, "0")}`;
   }
 
-  function parseAlphaByte(raw) {
-    const n = Number(String(raw ?? "").trim());
-    if (!Number.isFinite(n)) return 255;
-    return Math.max(0, Math.min(255, Math.round(n)));
-  }
-
   function toSignedInt32(unsigned) {
     const u = unsigned >>> 0;
     return u > 0x7fffffff ? u - 0x100000000 : u;
@@ -3945,21 +3902,6 @@
       delete v2[DEFAULT_SUBMODE];
     }
     state.selectedSubmode = submodeNames(base)[0] || DEFAULT_SUBMODE;
-    syncLayoutUiFromState();
-  }
-
-  function addSubmode() {
-    const base = state.selectedBase;
-    const submode = (prompt("新增子模式布局") || "").trim();
-    if (!submode) return;
-    if (submode === META_KEY || submode === DEFAULT_SUBMODE) return alert("子模式名无效");
-    if (submodeNames(base).includes(submode)) return alert(`子模式"${submode}"已有专用布局`);
-    const copyNodeForSub = el("layout-copy-source");
-    const source = (copyNodeForSub && copyNodeForSub.value) || entryKey(state.selectedBase, state.selectedSubmode);
-    if (!state.layout[base]) state.layout[base] = deepClone(getRowsByEntryKey(source));
-    setRows(base, submode, deepClone(getRowsByEntryKey(source)));
-    state.selectedBase = base;
-    state.selectedSubmode = submode;
     syncLayoutUiFromState();
   }
 
@@ -5583,17 +5525,6 @@
       state.qr.index = (state.qr.index + 1) % state.qr.chunks.length;
       updateQrUi();
     });
-    /*
-    el("layout-copy-chunk").addEventListener("click", async () => {
-      if (!state.qr.chunks.length) return;
-      try {
-        await navigator.clipboard.writeText(state.qr.chunks[state.qr.index]);
-        setStatus("layout-qr-meta", "当前二维码文本已复制", "ok");
-      } catch (_) {
-        setStatus("layout-qr-meta", "复制失败，请手动复制下方文本", "err");
-      }
-    });
-    */
   }
 
   function setupThemeQrActions() {
