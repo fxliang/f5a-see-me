@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-19T09:34+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-19T20:20+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -1906,7 +1906,6 @@
 
   function editorKeyLabel(key) {
     if (!key || typeof key !== "object") return "?";
-    if (typeof key.main === "string" && key.main) return key.main;
     if (typeof key.type === "string") {
       switch (key.type) {
         case "CapsKey": return "Caps";
@@ -1918,10 +1917,12 @@
         case "SymbolKey": return key.label || ".";
         case "ReturnKey": return "Enter";
         case "BackspaceKey": return "⌫";
+        case "AlphabetKey": return key.main || "?";
         case "MacroKey": return key.label || "M";
         default: return key.type;
       }
     }
+    if (typeof key.main === "string" && key.main) return key.main;
     return "?";
   }
 
@@ -2823,8 +2824,13 @@
     const rowHeightRaw = el("layout-key-row-height").value.trim();
     const inComposeEdit = !!state.composeNestedContext;
     if (type) key.type = type;
-    if (main.trim()) key.main = main; else delete key.main;
-    if (alt.trim()) key.alt = alt; else delete key.alt;
+    if (c.hasMainAlt) {
+      if (main.trim()) key.main = main; else delete key.main;
+      if (alt.trim()) key.alt = alt; else delete key.alt;
+    } else {
+      delete key.main;
+      delete key.alt;
+    }
     if (c.hasLabel) {
       if (type === "LayoutSwitchKey") key.label = label.trim() ? label : "?123";
       else if (type === "SymbolKey") key.label = label.trim() ? label : ".";
