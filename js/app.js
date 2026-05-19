@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-19T20:28+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-20T00:50+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -1856,8 +1856,39 @@
         if (!key || typeof key !== "object" || Array.isArray(key)) {
           throw new Error(`布局 ${name} 第 ${ri + 1} 行第 ${ki + 1} 个按键不是对象`);
         }
+        normalizeKeyFieldsForType(key);
         if (key.rowHeightPercent != null) normalizeRowHeightKey(key);
       });
+    });
+  }
+
+  function normalizeKeyFieldsForType(key) {
+    const type = String(key?.type || "").trim();
+    const c = keyTypeCapabilities(type);
+    if (!c.hasMainAlt) {
+      delete key.main;
+      delete key.alt;
+    }
+    if (!c.hasLabel) delete key.label;
+    if (!c.hasSubLabel) delete key.subLabel;
+    if (!c.hasDisplayText) delete key.displayText;
+    if (!c.hasSwipeLabel) delete key.swipeLabel;
+    if (!c.hasMacroLabels) {
+      delete key.altLabel;
+      delete key.longPressLabel;
+    }
+    if (!c.hasTapAction) delete key.tap;
+    if (!c.hasSwipeAction) delete key.swipe;
+    if (!c.hasLongPressAction) delete key.longPress;
+
+    const availableColorKeys = new Set();
+    availableColorFieldsForType(type).forEach((field) => {
+      availableColorKeys.add(field.customKey);
+      availableColorKeys.add(field.monetKey);
+    });
+    keyColorFields.forEach((field) => {
+      if (!availableColorKeys.has(field.customKey)) delete key[field.customKey];
+      if (!availableColorKeys.has(field.monetKey)) delete key[field.monetKey];
     });
   }
 
@@ -2862,6 +2893,7 @@
   function normalizeDraftForSaveByAppRules(key) {
     const type = String(key?.type || "").trim();
     if (!type) throw new Error("type 不能为空");
+    normalizeKeyFieldsForType(key);
     if (type === "AlphabetKey") {
       const main = String(key.main || "").trim();
       const alt = String(key.alt || "").trim();
