@@ -265,11 +265,15 @@ input[type="checkbox"] {
 
 .form-row {
   margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .form-row > label {
-  display: block;
-  margin-bottom: 4px;
+  display: inline-block;
+  margin-bottom: 0;
+  min-width: 80px;
   color: var(--sub);
 }
 
@@ -1026,12 +1030,31 @@ input[type="checkbox"] {
 
 .stack-actions {
   display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin: 10px 0 6px;
+  align-items: stretch;
+  justify-items: stretch;
+  /* 响应式：小屏幕时回退为一列 */
+}
+@media (max-width: 520px) {
+  .stack-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 .sub-edit-summary {
   margin-bottom: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  align-items: center;
+  /* 响应式：小屏幕时回退为一列 */
+}
+@media (max-width: 520px) {
+  .sub-edit-summary {
+    grid-template-columns: 1fr;
+  }
 }
 
 .sub-dialog {
