@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-20T11:05+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-20T11:36+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -2008,7 +2008,13 @@
       case "LayerSwitchKey": return key.label || "?123";
       case "CommaKey": return ",";
       case "LanguageKey": return "🌐";
-      case "SpaceKey": return "␣";
+      case "SpaceKey": {
+        // 优先显示 ime:submode 或 ime
+        const base = state.selectedBase || "ime";
+        const submode = state.selectedSubmode || "";
+        if (submode && submode !== DEFAULT_SUBMODE && state.layout[base] && state.layout[base][submode]) return `${base}(${submode})`;
+        return base;
+      }
       case "SymbolKey": return key.label || ".";
       case "ReturnKey": return "↵";
       case "BackspaceKey": return "⌫";
