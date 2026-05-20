@@ -5313,7 +5313,6 @@
     try {
       minifiedJson = JSON.stringify(JSON.parse(rawJson));
     } catch (e) {}
-    const rawOld = new TextEncoder().encode(rawJson);
     const raw = new TextEncoder().encode(minifiedJson);
     const compressed = window.lzma_wasm.compress(raw, { format: "xz", level: 9 });
     const crc = crc32(compressed);
@@ -5324,8 +5323,6 @@
     // 使每片尽量均匀，且每片不超过 maxBytes
     let chunkSize = Math.ceil(compressed.length / total);
     if (chunkSize > maxBytes) chunkSize = maxBytes;
-    console.log('rawOld.length = %d, raw.length = %d, compressed.length = %d', rawOld.length, raw.length, compressed.length);
-    console.log('chunkSize = %d, total = %d', chunkSize, total);
     const chunks = [];
     for (let i = 0; i < total; i++) {
       const start = i * chunkSize;
