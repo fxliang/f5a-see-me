@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-05-20T09:19+08:00";
+  const WEB_EDITOR_BUILD = "2026-05-20T11:05+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -343,12 +343,27 @@
     popupQr: { chunks: [], index: 0, transferId: "", popupSignature: "" },
     popupCandidateDrag: null,
     popupCandidateDragMoved: false,
+    popupPointerDragNode: null,
+    popupPointerDragSource: null,
+    layoutChipClickSuppressedUntil: 0,
+    layoutChipNativeClickSuppressedUntil: 0,
+    layoutKeyDialogTouchOpenUntil: 0,
+    layoutKeyDialogConsumeNextClick: false,
+    keyPointerDragPointerId: null,
+    keyPointerDragHoldTimer: null,
+    keyPointerDragActive: false,
+    keyPointerDragStartX: 0,
+    keyPointerDragStartY: 0,
+    keyPointerDragNode: null,
+    keyPointerDragSource: null,
     popupChipClickSuppressedUntil: 0,
+    popupChipNativeClickSuppressedUntil: 0,
     popupPointerDragPointerId: null,
     popupPointerDragHoldTimer: null,
     popupPointerDragActive: false,
     popupPointerDragStartX: 0,
     popupPointerDragStartY: 0,
+    popupConsumeNextNativeClick: false,
     themeAppSync: {
       borderEnabled: true,
       borderOutline: false,
@@ -995,6 +1010,18 @@
     state.popupPointerDragActive = false;
     state.popupPointerDragStartX = 0;
     state.popupPointerDragStartY = 0;
+    state.popupPointerDragNode = null;
+    state.popupPointerDragSource = null;
+  }
+
+  function abortPopupPointerDrag(pointerId = null) {
+    const dragNode = state.popupPointerDragNode;
+    resetPopupPointerDragState();
+    if (dragNode && pointerId != null) {
+      try {
+        dragNode.releasePointerCapture(pointerId);
+      } catch (_) {}
+    }
   }
 
   function renderPopupEditor() {
@@ -1019,16 +1046,19 @@
       valuesWrap.dataset.popupKey = key;
       values.forEach((value, index) => {
         const chip = document.createElement("button");
+        let popupTapPointerId = null;
+        let popupTapStartX = 0;
+        let popupTapStartY = 0;
         chip.type = "button";
         chip.className = "popup-chip";
+        chip.dataset.popupIndex = String(index);
         if (state.popupCandidateDrag?.key === key && state.popupCandidateDrag?.index === index) {
           chip.classList.add("dragging");
         }
         chip.textContent = value;
         chip.title = "点击编辑，右键删除";
         chip.draggable = true;
-        chip.addEventListener("click", () => {
-          if (Date.now() < state.popupChipClickSuppressedUntil) return;
+        const openPopupCandidateEditor = () => {
           const next = prompt(`编辑「${key}」的候选字符`, value);
           if (next == null) return;
           const normalized = next.trim();
@@ -1038,6 +1068,16 @@
           renderPopupEditor();
           syncPopupJsonFromState();
           setStatus("popup-editor-status", `已更新 ${key} 的候选字符`, "ok");
+        };
+        chip.addEventListener("click", (ev) => {
+          if (state.popupConsumeNextNativeClick) {
+            state.popupConsumeNextNativeClick = false;
+            return;
+          }
+          if (Date.now() < state.popupChipNativeClickSuppressedUntil) return;
+          if (!isStrictElementClick(ev, chip)) return;
+          if (Date.now() < state.popupChipClickSuppressedUntil) return;
+          openPopupCandidateEditor();
         });
         chip.addEventListener("contextmenu", (ev) => {
           ev.preventDefault();
@@ -1083,17 +1123,46 @@
         });
         chip.addEventListener("pointerdown", (ev) => {
           if (ev.button !== 0 || ev.pointerType === "mouse") return;
+          state.popupChipNativeClickSuppressedUntil = Date.now() + 700;
+          popupTapPointerId = ev.pointerId;
+          popupTapStartX = ev.clientX;
+          popupTapStartY = ev.clientY;
           resetPopupPointerDragState();
           state.popupPointerDragPointerId = ev.pointerId;
           state.popupPointerDragStartX = ev.clientX;
           state.popupPointerDragStartY = ev.clientY;
+          state.popupPointerDragNode = chip;
+          state.popupPointerDragSource = { key, index };
+          try {
+            chip.setPointerCapture(ev.pointerId);
+          } catch (_) {}
           state.popupPointerDragHoldTimer = setTimeout(() => {
-            if (state.popupPointerDragPointerId !== ev.pointerId) return;
-            state.popupCandidateDrag = { key, index };
+            if (state.popupPointerDragPointerId !== ev.pointerId || !state.popupPointerDragSource) return;
+            state.popupCandidateDrag = {
+              key: state.popupPointerDragSource.key,
+              index: state.popupPointerDragSource.index
+            };
             state.popupCandidateDragMoved = false;
             state.popupPointerDragActive = true;
             renderPopupEditor();
           }, 120);
+        });
+        chip.addEventListener("pointerup", (ev) => {
+          if (ev.pointerType === "mouse") return;
+          if (popupTapPointerId !== ev.pointerId) return;
+          popupTapPointerId = null;
+          if (state.popupPointerDragActive) return;
+          const dx = Math.abs(ev.clientX - popupTapStartX);
+          const dy = Math.abs(ev.clientY - popupTapStartY);
+          if (dx > 8 || dy > 8) return;
+          if (!isPointInsideElement(ev.clientX, ev.clientY, chip)) return;
+          if (Date.now() < state.popupChipClickSuppressedUntil) return;
+          state.popupConsumeNextNativeClick = true;
+          openPopupCandidateEditor();
+        });
+        chip.addEventListener("pointercancel", (ev) => {
+          if (popupTapPointerId !== ev.pointerId) return;
+          popupTapPointerId = null;
         });
         valuesWrap.appendChild(chip);
       });
@@ -1645,6 +1714,21 @@
     if (mode === "ok") node.classList.add("ok");
     if (mode === "err") node.classList.add("err");
     node.textContent = text || "";
+  }
+
+  function isStrictElementClick(ev, element) {
+    if (!ev || !element) return false;
+    if (ev.detail === 0) return true;
+    const x = Number(ev.clientX);
+    const y = Number(ev.clientY);
+    return isPointInsideElement(x, y, element);
+  }
+
+  function isPointInsideElement(x, y, element) {
+    if (!element) return false;
+    if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return false;
+    const rect = element.getBoundingClientRect();
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   }
 
   function downloadFile(name, content) {
@@ -2263,6 +2347,9 @@
       const keysWrap = block.querySelector(".key-list");
       row.forEach((key, keyIndex) => {
         const keyBtn = document.createElement("button");
+        let keyTapPointerId = null;
+        let keyTapStartX = 0;
+        let keyTapStartY = 0;
         keyBtn.className = `layout-chip ${keyVariantClass(key)}`;
         keyBtn.style.cssText = keyVariantStyle(key);
         if (state.dragKey?.row === rowIndex && state.dragKey?.index === keyIndex) {
@@ -2275,7 +2362,39 @@
           <span class="chip-main">${escapeHtml(editorKeyLabel(key))}</span>
         `;
         keyBtn.title = `${key.type || "?"}。点击编辑，拖拽排序，右键删除`;
-        keyBtn.addEventListener("click", () => openLayoutKeyDialog(rowIndex, keyIndex, false));
+        const openLayoutKeyEditor = () => {
+          openLayoutKeyDialog(rowIndex, keyIndex, false);
+        };
+        keyBtn.addEventListener("click", (ev) => {
+          if (Date.now() < state.layoutChipNativeClickSuppressedUntil) return;
+          if (!isStrictElementClick(ev, keyBtn)) return;
+          if (Date.now() < state.layoutChipClickSuppressedUntil) return;
+          openLayoutKeyEditor();
+        });
+        keyBtn.addEventListener("pointerdown", (ev) => {
+          if (ev.button !== 0 || ev.pointerType === "mouse") return;
+          state.layoutChipNativeClickSuppressedUntil = Date.now() + 700;
+          keyTapPointerId = ev.pointerId;
+          keyTapStartX = ev.clientX;
+          keyTapStartY = ev.clientY;
+        });
+        keyBtn.addEventListener("pointerup", (ev) => {
+          if (ev.pointerType === "mouse") return;
+          if (keyTapPointerId !== ev.pointerId) return;
+          keyTapPointerId = null;
+          if (state.keyPointerDragActive) return;
+          const dx = Math.abs(ev.clientX - keyTapStartX);
+          const dy = Math.abs(ev.clientY - keyTapStartY);
+          if (dx > 8 || dy > 8) return;
+          if (!isPointInsideElement(ev.clientX, ev.clientY, keyBtn)) return;
+          if (Date.now() < state.layoutChipClickSuppressedUntil) return;
+          state.layoutKeyDialogTouchOpenUntil = Date.now() + 1000;
+          openLayoutKeyEditor();
+        });
+        keyBtn.addEventListener("pointercancel", (ev) => {
+          if (keyTapPointerId !== ev.pointerId) return;
+          keyTapPointerId = null;
+        });
         keyBtn.addEventListener("contextmenu", (ev) => {
           ev.preventDefault();
           const keyName = editorKeyLabel(key);
@@ -2375,6 +2494,7 @@
   }
 
   function bindKeyDrag(node) {
+    // 桌面端原生拖拽
     node.addEventListener("dragstart", (ev) => {
       ev.stopPropagation();
       ev.dataTransfer.setData("text/x-layout-key", `${node.dataset.rowIndex}:${node.dataset.keyIndex}`);
@@ -2401,6 +2521,107 @@
       state.dragKey = null;
       syncLayoutUiFromState();
     });
+
+    // 移动端（touch/pen）使用 pointer 长按拖拽，避免浏览器滚动吞掉触摸手势。
+    node.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0 || ev.pointerType === "mouse") return;
+      resetKeyPointerDragState();
+      state.keyPointerDragPointerId = ev.pointerId;
+      state.keyPointerDragStartX = ev.clientX;
+      state.keyPointerDragStartY = ev.clientY;
+      state.keyPointerDragNode = node;
+      state.keyPointerDragSource = {
+        row: Number(node.dataset.rowIndex),
+        index: Number(node.dataset.keyIndex)
+      };
+      try {
+        node.setPointerCapture(ev.pointerId);
+      } catch (_) {}
+      state.keyPointerDragHoldTimer = setTimeout(() => {
+        if (state.keyPointerDragPointerId !== ev.pointerId || !state.keyPointerDragSource) return;
+        state.dragKey = {
+          row: state.keyPointerDragSource.row,
+          index: state.keyPointerDragSource.index
+        };
+        state.keyPointerDragActive = true;
+        node.classList.add("dragging");
+        renderLayoutEditor();
+      }, 150);
+    });
+  }
+
+  function clearKeyPointerDragHoldTimer() {
+    if (state.keyPointerDragHoldTimer != null) {
+      clearTimeout(state.keyPointerDragHoldTimer);
+      state.keyPointerDragHoldTimer = null;
+    }
+  }
+
+  function resetKeyPointerDragState() {
+    clearKeyPointerDragHoldTimer();
+    state.keyPointerDragPointerId = null;
+    state.keyPointerDragActive = false;
+    state.keyPointerDragStartX = 0;
+    state.keyPointerDragStartY = 0;
+    state.keyPointerDragNode = null;
+    state.keyPointerDragSource = null;
+  }
+
+  function abortKeyPointerDrag(pointerId = null) {
+    const dragNode = state.keyPointerDragNode;
+    resetKeyPointerDragState();
+    if (dragNode && pointerId != null) {
+      try {
+        dragNode.releasePointerCapture(pointerId);
+      } catch (_) {}
+    }
+  }
+
+  function keyPointerDropTargetFromPoint(clientX, clientY) {
+    const chip = document.elementFromPoint(clientX, clientY)?.closest?.(".layout-chip");
+    if (!chip) return null;
+    const direct = chip.closest?.(".key-list");
+    if (!direct) return null;
+    return {
+      row: Number(direct.dataset.rowIndex),
+      index: insertionIndexFromKeyEvent(chip, { clientX })
+    };
+  }
+
+  function popupPointerDropTargetFromPoint(clientX, clientY) {
+    const drag = state.popupCandidateDrag;
+    if (!drag) return null;
+    const chip = document.elementFromPoint(clientX, clientY)?.closest?.(".popup-chip");
+    if (!chip) return null;
+    const direct = chip.closest?.(".popup-entry-values");
+    if (!direct || direct.dataset.popupKey !== drag.key) return null;
+    const index = Number(chip.dataset.popupIndex);
+    if (!Number.isInteger(index) || index < 0) return null;
+    const rect = chip.getBoundingClientRect();
+    const placeAfter = clientX > rect.left + rect.width / 2;
+    return {
+      key: drag.key,
+      index: index + (placeAfter ? 1 : 0)
+    };
+  }
+
+  function keyInsertionIndexFromPointerInRow(list, clientX, clientY) {
+    const chips = Array.from(list.querySelectorAll(".layout-chip"));
+    if (!chips.length) return 0;
+    let bestIndex = chips.length;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    chips.forEach((chip, index) => {
+      const rect = chip.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const dx = centerX - clientX;
+      const dy = centerY - clientY;
+      const distance = dx * dx + dy * dy;
+      if (distance >= bestDistance) return;
+      bestDistance = distance;
+      bestIndex = clientX > centerX ? index + 1 : index;
+    });
+    return bestIndex;
   }
 
   function finishRowPointerDrag() {
@@ -2413,6 +2634,17 @@
   }
 
   document.addEventListener("pointermove", (ev) => {
+    if (state.keyPointerDragPointerId === ev.pointerId) {
+      if (!state.keyPointerDragActive) {
+        const dx = Math.abs(ev.clientX - state.keyPointerDragStartX);
+        const dy = Math.abs(ev.clientY - state.keyPointerDragStartY);
+        if (dx > 8 || dy > 8) abortKeyPointerDrag(ev.pointerId);
+      } else {
+        ev.preventDefault();
+        const target = keyPointerDropTargetFromPoint(ev.clientX, ev.clientY);
+        if (target) previewMoveKey(target.row, target.index);
+      }
+    }
     if (state.dragRowPointerId !== ev.pointerId || state.dragRow == null) return;
     ev.preventDefault();
     const insertionIndex = rowInsertionIndexFromPointerY(ev.clientY);
@@ -2421,11 +2653,25 @@
   });
 
   document.addEventListener("pointerup", (ev) => {
+    if (state.keyPointerDragPointerId === ev.pointerId) {
+      const moved = state.keyPointerDragActive && !!state.dragKey;
+      abortKeyPointerDrag(ev.pointerId);
+      if (moved) {
+        state.layoutChipClickSuppressedUntil = Date.now() + 250;
+        state.dragKey = null;
+        syncLayoutUiFromState();
+      }
+    }
     if (state.dragRowPointerId !== ev.pointerId) return;
     finishRowPointerDrag();
   });
 
   document.addEventListener("pointercancel", (ev) => {
+    if (state.keyPointerDragPointerId === ev.pointerId) {
+      abortKeyPointerDrag(ev.pointerId);
+      state.dragKey = null;
+      syncLayoutUiFromState();
+    }
     if (state.dragRowPointerId !== ev.pointerId) return;
     finishRowPointerDrag();
   });
@@ -2522,13 +2768,12 @@
       if (!state.popupPointerDragActive) {
         const dx = Math.abs(ev.clientX - state.popupPointerDragStartX);
         const dy = Math.abs(ev.clientY - state.popupPointerDragStartY);
-        if (dx > 8 || dy > 8) resetPopupPointerDragState();
+        if (dx > 8 || dy > 8) abortPopupPointerDrag(ev.pointerId);
       } else {
         ev.preventDefault();
-        const key = state.popupCandidateDrag?.key;
-        if (key) {
-          const insertionIndex = popupCandidateInsertionIndexFromPointer(key, ev.clientX, ev.clientY);
-          if (insertionIndex != null) previewMovePopupCandidate(key, insertionIndex);
+        const target = popupPointerDropTargetFromPoint(ev.clientX, ev.clientY);
+        if (target) {
+          previewMovePopupCandidate(target.key, target.index);
         }
       }
     }
@@ -2549,7 +2794,7 @@
     if (state.popupPointerDragPointerId === ev.pointerId) {
       const dragKey = state.popupCandidateDrag?.key || "";
       const moved = state.popupPointerDragActive && state.popupCandidateDragMoved;
-      resetPopupPointerDragState();
+      abortPopupPointerDrag(ev.pointerId);
       state.popupCandidateDrag = null;
       if (moved) {
         state.popupChipClickSuppressedUntil = Date.now() + 250;
@@ -2567,7 +2812,7 @@
 
   document.addEventListener("pointercancel", (ev) => {
     if (state.popupPointerDragPointerId === ev.pointerId) {
-      resetPopupPointerDragState();
+      abortPopupPointerDrag(ev.pointerId);
       state.popupCandidateDrag = null;
       state.popupCandidateDragMoved = false;
       renderPopupEditor();
@@ -2702,6 +2947,9 @@
       syncKeyDialogActionButtons();
       el("layout-key-delete").disabled = isNew;
       setStatus("layout-key-dialog-status", "", "");
+      if (Date.now() < state.layoutKeyDialogTouchOpenUntil) {
+        state.layoutKeyDialogConsumeNextClick = true;
+      }
       el("layout-key-dialog").showModal();
     } catch (e) {
       console.error("openLayoutKeyDialog failed", e);
@@ -4916,6 +5164,18 @@
     } else {
       console.error("bindKeyEditorDialogEvents not loaded");
       setStatus("layout-json-status", "按键编辑模块加载失败，请刷新页面重试", "err");
+    }
+    const keyDialog = el("layout-key-dialog");
+    if (keyDialog) {
+      keyDialog.addEventListener("click", (ev) => {
+        if (!state.layoutKeyDialogConsumeNextClick) return;
+        state.layoutKeyDialogConsumeNextClick = false;
+        ev.preventDefault();
+        ev.stopPropagation();
+      }, true);
+      keyDialog.addEventListener("close", () => {
+        state.layoutKeyDialogConsumeNextClick = false;
+      });
     }
     const jsonCard = el("layout-json-card");
     if (jsonCard) {
