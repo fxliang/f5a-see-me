@@ -1508,14 +1508,25 @@ input[type="checkbox"] {
   }
 
   .popup-entry-row {
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 8px;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .popup-entry-key,
+  .popup-entry-add,
+  .popup-entry-delete {
+    flex: 0 0 auto;
   }
 
   .popup-entry-values {
-    flex: 1 1 100%;
-    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    flex-wrap: wrap;
+    overflow: visible;
+    white-space: normal;
+    gap: 6px;
   }
 
   .theme-preview-mobile-card {
