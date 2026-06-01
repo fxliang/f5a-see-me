@@ -21,6 +21,7 @@ details.card,
   --err: #ff6b6b;
   --topbar-height: 72px;
   --preview-panel-height: clamp(140px, 22vh, 220px);
+  --preview-zoom: 1;
 }
 
 * {
@@ -587,6 +588,11 @@ input[type="checkbox"] {
   gap: 6px;
 }
 
+.theme-preview-extra-mobile .theme-preview-extra-item {
+  font-size: 13px;
+  min-height: 26px;
+}
+
 .theme-preview-extra-item {
   display: flex;
   align-items: center;
@@ -825,7 +831,7 @@ input[type="checkbox"] {
 
 .preview-shell {
   display: grid;
-  grid-template-columns: minmax(200px, 300px) minmax(0, 1fr) minmax(200px, 300px);
+  grid-template-columns: minmax(160px, auto) minmax(0, 1fr) minmax(160px, auto);
   gap: 10px;
   align-items: start;
   padding-top: 4px;

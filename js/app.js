@@ -868,6 +868,7 @@
     if (leftRoot) leftRoot.innerHTML = items.slice(0, 4).join("");
     if (rightRoot) rightRoot.innerHTML = items.slice(4, 8).join("");
     if (mobileRoot) mobileRoot.innerHTML = items.join("");
+    requestAnimationFrame(() => balanceThemeSideHeights());
   }
 
   function normalizePopupEntries(raw) {
@@ -2191,17 +2192,20 @@
     const preview = document.querySelector(".keyboard-preview-panel");
     const topbarHeight = topbar?.offsetHeight || 0;
 
-    // Undo current zoom to recover natural preview height
-    const currentZoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--preview-zoom").trim()) || 1;
-    const currentHeight = preview?.offsetHeight || 0;
-    const naturalHeight = currentZoom > 0.01 ? currentHeight / currentZoom : currentHeight;
+    const shell = document.querySelector(".preview-shell");
+    // Temporarily reset zoom to measure natural height
+    const savedZoom = shell?.style.zoom;
+    if (shell) shell.style.zoom = "1";
+    const naturalHeight = shell?.offsetHeight || 220;
+    if (shell) shell.style.zoom = savedZoom || "";
 
-    // Scale preview down on short viewports so it doesn't dominate the screen.
-    // Tall viewports (> 1000px) get no scaling — preview at natural size is fine.
+    // More aggressive on desktop (no touch) where high-DPI scaling is common
     const vh = window.innerHeight;
-    const targetMax = vh * 0.22; // preview at most 22% of viewport
+    const isMobile = navigator.maxTouchPoints > 0;
+    const ratio = isMobile ? 0.22 : 0.14;
+    const targetMax = Math.max(vh * ratio, isMobile ? 200 : 130);
     let scale = 1;
-    if (naturalHeight > targetMax && naturalHeight > 0 && vh <= 1000) {
+    if (naturalHeight > targetMax && naturalHeight > 0) {
       scale = Math.max(0.45, targetMax / naturalHeight);
     }
     document.documentElement.style.setProperty("--preview-zoom", scale);
@@ -2209,6 +2213,23 @@
     const previewHeight = preview?.offsetHeight || 0;
     document.documentElement.style.setProperty("--topbar-height", `${topbarHeight}px`);
     document.documentElement.style.setProperty("--preview-panel-height", `${previewHeight}px`);
+
+    // Balance theme side heights AFTER zoom is applied — purely visual, doesn't affect scaling
+    requestAnimationFrame(() => balanceThemeSideHeights());
+  }
+
+  function balanceThemeSideHeights() {
+    const center = document.querySelector(".preview-center");
+    const sides = document.querySelectorAll(".theme-preview-extra-side");
+    if (!center || sides.length === 0) return;
+    const centerH = center.offsetHeight;
+    sides.forEach(side => {
+      if (centerH > 0) {
+        side.style.minHeight = centerH + "px";
+      } else {
+        side.style.minHeight = "";
+      }
+    });
   }
 
   function defaultRowHeightPercent(rowCount) {
@@ -6474,8 +6495,10 @@
     const mobilePreviewCard = el("theme-preview-mobile-card");
     if (mobilePreviewCard) {
       mobilePreviewCard.addEventListener("toggle", () => {
-        updateFixedChromeMetrics();
-        requestAnimationFrame(fitLayoutPreviewText);
+        requestAnimationFrame(() => {
+          updateFixedChromeMetrics();
+          requestAnimationFrame(fitLayoutPreviewText);
+        });
       });
     }
     state.layoutHeightObserver = new ResizeObserver(() => syncJsonEditorHeight());
