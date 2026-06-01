@@ -20,7 +20,7 @@ details.card,
   --ok: #4cc38a;
   --err: #ff6b6b;
   --topbar-height: 72px;
-  --preview-panel-height: 220px;
+  --preview-panel-height: clamp(140px, 22vh, 220px);
 }
 
 * {
@@ -35,7 +35,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  font: clamp(12px, 1.8vh, 15px)/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
 .topbar {
@@ -78,8 +78,8 @@ body {
 
 .tabs {
   display: flex;
-  gap: 8px;
-  padding: 12px 20px;
+  gap: clamp(4px, 1vh, 8px);
+  padding: clamp(8px, 1.2vh, 12px) clamp(12px, 2.5vh, 20px);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: calc(var(--topbar-height) + var(--preview-panel-height));
@@ -91,9 +91,9 @@ body {
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text);
-  padding: 8px 12px;
+  padding: clamp(5px, 0.8vh, 8px) clamp(8px, 1.5vh, 14px);
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .tab.active {
@@ -107,7 +107,7 @@ main {
 
 .panel {
   display: none;
-  gap: 12px;
+  gap: clamp(8px, 1.5vh, 14px);
 }
 
 .panel.active {
@@ -116,7 +116,7 @@ main {
 
 .grid {
   display: grid;
-  gap: 12px;
+  gap: clamp(8px, 1.5vh, 14px);
   grid-template-columns: 1.4fr 1fr;
 }
 
@@ -124,20 +124,20 @@ main {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px;
+  padding: clamp(8px, 1.5vh, 14px);
   margin: 12px 20px 0;
 }
 
 .card h2 {
   margin: 0 0 10px;
-  font-size: 16px;
+  font-size: clamp(14px, 2vh, 17px);
 }
 
 .toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: clamp(4px, 1vh, 8px);
+  margin-bottom: clamp(6px, 1.2vh, 10px);
 }
 
 button, .file-button {
@@ -145,7 +145,7 @@ button, .file-button {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 8px 10px;
+  padding: clamp(5px, 0.8vh, 8px) clamp(6px, 1.2vh, 12px);
   cursor: pointer;
 }
 
@@ -163,6 +163,26 @@ summary {
   background: #11151d;
   border-bottom: 1px solid var(--border);
   padding: 10px 20px 8px;
+}
+
+.keyboard-preview-panel > summary {
+  padding-right: 80px;
+}
+
+/* Overlay meta on summary line (moved out of preview-shell by JS) */
+#layout-preview-meta {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-weight: 400;
+  color: var(--sub);
+  margin: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .layout-workbench {
@@ -574,8 +594,8 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 8px;
-  font-size: 12px;
-  min-height: 30px;
+  font-size: 18px;
+  min-height: clamp(28px, 3.8vh, 34px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -667,8 +687,10 @@ input[type="checkbox"] {
 
 .status {
   color: var(--sub);
-  min-height: 22px;
-  margin-top: 6px;
+  min-height: 18px;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .status.ok {
@@ -687,13 +709,13 @@ input[type="checkbox"] {
 }
 
 .layout-chip {
-  min-width: 42px;
-  min-height: 34px;
+  min-width: clamp(36px, 5vh, 44px);
+  min-height: clamp(28px, 4vh, 36px);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: #242a38;
   color: var(--text);
-  padding: 4px 10px;
+  padding: clamp(2px, 0.5vh, 5px) clamp(6px, 1.2vh, 12px);
   cursor: grab;
   position: relative;
   display: inline-flex;
@@ -738,12 +760,13 @@ input[type="checkbox"] {
 }
 
 .layout-chip.space-key {
-  min-width: 110px;
+  min-width: clamp(80px, 12vh, 120px);
   background: #2a3140;
 }
 
 .chip-main {
   line-height: 1;
+  font-size: clamp(11px, 1.5vh, 13px);
 }
 
 .chip-alt {
@@ -778,7 +801,7 @@ input[type="checkbox"] {
   opacity: .55;
   width: 32px;
   text-align: center;
-  font-size: 16px;
+
 }
 
 .key-list {
@@ -802,9 +825,11 @@ input[type="checkbox"] {
 
 .preview-shell {
   display: grid;
-  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) minmax(150px, 220px);
+  grid-template-columns: minmax(200px, 300px) minmax(0, 1fr) minmax(200px, 300px);
   gap: 10px;
   align-items: start;
+  padding-top: 4px;
+  zoom: var(--preview-zoom, 1);
 }
 
 .preview-center {
@@ -1466,7 +1491,7 @@ input[type="checkbox"] {
 @media (max-width: 1080px) {
   :root {
     --topbar-height: 96px;
-    --preview-panel-height: 220px;
+    --preview-panel-height: clamp(140px, 22vh, 220px);
   }
 
   .grid {
@@ -1541,21 +1566,21 @@ input[type="checkbox"] {
 @media (max-height: 980px) {
   :root {
     --topbar-height: 64px;
-    --preview-panel-height: 180px;
+    --preview-panel-height: clamp(120px, 18vh, 180px);
   }
 
   .card {
-    padding: 10px;
-    margin: 8px 12px 0;
+    padding: 8px;
+    margin: 6px 10px 0;
   }
 
   .layout-workbench {
-    margin: 0 12px;
-    gap: 8px;
+    margin: 0 10px;
+    gap: 6px;
   }
 
   .keyboard-preview-panel {
-    padding: 8px 12px;
+    padding: 6px 10px;
   }
 
   .footer-compact {

@@ -2190,6 +2190,22 @@
     const topbar = document.querySelector(".topbar");
     const preview = document.querySelector(".keyboard-preview-panel");
     const topbarHeight = topbar?.offsetHeight || 0;
+
+    // Undo current zoom to recover natural preview height
+    const currentZoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--preview-zoom").trim()) || 1;
+    const currentHeight = preview?.offsetHeight || 0;
+    const naturalHeight = currentZoom > 0.01 ? currentHeight / currentZoom : currentHeight;
+
+    // Scale preview down on short viewports so it doesn't dominate the screen.
+    // Tall viewports (> 1000px) get no scaling — preview at natural size is fine.
+    const vh = window.innerHeight;
+    const targetMax = vh * 0.22; // preview at most 22% of viewport
+    let scale = 1;
+    if (naturalHeight > targetMax && naturalHeight > 0 && vh <= 1000) {
+      scale = Math.max(0.45, targetMax / naturalHeight);
+    }
+    document.documentElement.style.setProperty("--preview-zoom", scale);
+
     const previewHeight = preview?.offsetHeight || 0;
     document.documentElement.style.setProperty("--topbar-height", `${topbarHeight}px`);
     document.documentElement.style.setProperty("--preview-panel-height", `${previewHeight}px`);
@@ -6477,6 +6493,13 @@
     window.addEventListener("resize", updateFixedChromeMetrics);
     window.addEventListener("resize", () => requestAnimationFrame(fitLayoutPreviewText));
     updateFixedChromeMetrics();
+    // Move layout-preview-meta out of preview-shell to avoid zoom,
+    // then position it on the same line as the summary via CSS.
+    const meta = document.getElementById("layout-preview-meta");
+    const panel = document.querySelector(".keyboard-preview-panel");
+    if (meta && panel && meta.parentElement?.closest(".preview-shell")) {
+      panel.appendChild(meta);
+    }
     setStatus("layout-qr-meta", "点击“生成二维码”后会自动按 App 协议分片编码", "");
     setStatus("theme-qr-meta", "点击“分享当前激活主题”可自动导出 ZIP 或二维码长图", "");
     setStatus("popup-qr-meta", "点击“生成二维码”可预览并下载弹出字符长图", "");
