@@ -33,6 +33,7 @@
       <button type="button" class="tab active" data-tab-target="tab-layout" aria-controls="tab-layout" aria-selected="true">布局编辑</button>
       <button type="button" class="tab" data-tab-target="tab-theme" aria-controls="tab-theme" aria-selected="false">主题编辑</button>
       <button type="button" class="tab" data-tab-target="tab-popup" aria-controls="tab-popup" aria-selected="false">弹出字符</button>
+      <button type="button" class="tab" data-tab-target="tab-icon-theme" aria-controls="tab-icon-theme" aria-selected="false">图标主题</button>
     </div>
 
     <section class="panel active" id="tab-layout" role="tabpanel">
@@ -238,6 +239,39 @@
           <div class="json-card-body">
             <textarea id="popup-json" class="json-editor"></textarea>
             <div id="popup-json-status" class="status"></div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-icon-theme" role="tabpanel">
+      <div class="layout-workbench icon-theme-workbench">
+        <details class="card icon-theme-main-card" open>
+          <summary>图标主题管理与编辑</summary>
+          <div class="toolbar details-toolbar">
+            <button id="icon-theme-ime-load" type="button">从 IME 读取</button>
+            <button id="icon-theme-ime-save" type="button">保存到 IME</button>
+            <button id="icon-theme-create-new" type="button">新建主题</button>
+            <button id="icon-theme-export-json" type="button">导出 JSON</button>
+            <button id="icon-theme-export-zip" type="button">导出 ZIP</button>
+            <button id="icon-theme-import-json" type="button">导入 JSON</button>
+            <button id="icon-theme-import-shared" type="button">导入主题</button>
+            <button id="icon-theme-rename" type="button">改名</button>
+            <button id="icon-theme-delete" type="button">删除</button>
+            <input id="icon-theme-import-file" type="file" accept="application/json,.json,application/zip,.zip,image/png,image/jpeg,image/webp" hidden>
+            <input id="icon-theme-import-json-file" type="file" accept="application/json,.json" hidden>
+          </div>
+          <div id="icon-theme-qr-meta" class="status"></div>
+          <div id="icon-theme-list" class="theme-list"></div>
+          <div id="icon-theme-editor-status" class="status"></div>
+          <div id="icon-theme-slots" class="icon-theme-slots"></div>
+        </details>
+
+        <details class="card json-card" id="icon-theme-json-card" open>
+          <summary>图标主题 JSON</summary>
+          <div class="json-card-body">
+            <textarea id="icon-theme-json" class="json-editor"></textarea>
+            <div id="icon-theme-json-status" class="status"></div>
           </div>
         </details>
       </div>
@@ -556,6 +590,40 @@
           <button id="popup-download-qr-preview" type="button">下载长图</button>
           <button id="popup-close-qr-preview" type="submit">关闭</button>
         </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="icon-slot-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3 id="icon-slot-dialog-title">编辑图标</h3></div>
+      <div class="icon-slot-compare">
+        <div class="icon-slot-preview-col">
+          <div class="icon-slot-preview-label">内置默认</div>
+          <div id="icon-slot-builtin-preview" class="icon-slot-preview-box"></div>
+        </div>
+        <div class="icon-slot-preview-col">
+          <div class="icon-slot-preview-label">当前自定义</div>
+          <div id="icon-slot-custom-preview" class="icon-slot-preview-box"></div>
+        </div>
+      </div>
+      <div class="icon-slot-emoji-row" id="icon-slot-emoji-row">
+        <label>文本/Emoji 图标</label>
+        <input id="icon-slot-emoji" type="text" placeholder="例如: ⚙️ 或 🎨">
+      </div>
+      <div class="form-row">
+        <button id="icon-slot-select-file" type="button">选择文件 (SVG/PNG/XML)</button>
+        <input id="icon-slot-file-input" type="file" accept="image/*,.svg,.xml,text/xml,application/xml" hidden>
+        <button id="icon-slot-clear" type="button">清除</button>
+      </div>
+      <div id="icon-slot-pasted-svg" class="form-row" hidden>
+        <label>粘贴 SVG</label>
+        <textarea id="icon-slot-svg-textarea" rows="3" placeholder="直接粘贴 SVG 源码..."></textarea>
+      </div>
+      <div id="icon-slot-status" class="status"></div>
+      <div class="toolbar">
+        <button type="button" id="icon-slot-cancel">取消</button>
+        <button type="button" id="icon-slot-save">确认</button>
       </div>
     </form>
   </dialog>

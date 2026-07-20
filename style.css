@@ -1809,3 +1809,194 @@ input[type="checkbox"] {
     padding: 6px 12px 12px;
   }
 }
+
+/* ── Icon Theme Editor ── */
+.icon-theme-workbench {
+  align-items: start;
+}
+
+.icon-theme-main-card {
+  min-width: 0;
+}
+
+.icon-theme-slots {
+  display: grid;
+  gap: 0;
+  margin-top: 10px;
+  min-width: 0;
+}
+
+.icon-slot-section-header {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--primary);
+  padding: 12px 0 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.icon-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(42, 49, 66, 0.4);
+  min-height: 42px;
+}
+
+.icon-slot-row:hover {
+  background: rgba(79, 140, 255, 0.04);
+}
+
+.icon-slot-builtin-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sub);
+  font-size: 18px;
+}
+
+.icon-slot-name {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--text);
+  min-width: 0;
+}
+
+.icon-slot-custom-preview {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--text);
+  overflow: hidden;
+}
+
+.icon-slot-custom-preview img,
+.icon-slot-custom-preview svg {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.icon-slot-edit-btn {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 3px 10px;
+  min-width: 48px;
+}
+
+.icon-slot-compare {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.icon-slot-preview-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-slot-preview-label {
+  font-size: 12px;
+  color: var(--sub);
+}
+
+.icon-slot-preview-box {
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #10131b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  overflow: hidden;
+}
+
+.icon-slot-preview-box img,
+.icon-slot-preview-box svg {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.icon-slot-emoji-row {
+  margin-bottom: 10px;
+}
+
+.icon-slot-emoji-row > label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--sub);
+}
+
+/* Grid-based icon theme card for icon theme list */
+.icon-theme-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: #10131b;
+  text-align: left;
+  cursor: pointer;
+}
+
+.icon-theme-card.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary) inset;
+}
+
+.icon-theme-card-preview {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  border-radius: 6px;
+  min-height: 64px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.icon-theme-card-preview-cell {
+  width: 100%;
+  height: 30px;
+  border: 1px solid rgba(42, 49, 66, 0.5);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.icon-theme-card-preview-cell img,
+.icon-theme-card-preview-cell svg {
+  max-width: 80%;
+  max-height: 80%;
+}
+
+.icon-theme-card-name {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-theme-card-count {
+  font-size: 11px;
+  color: var(--sub);
+  margin-top: 2px;
+}

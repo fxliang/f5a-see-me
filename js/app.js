@@ -303,6 +303,59 @@
     "Market", "Go", "Off", "Shop"
   ];
 
+  // ── Icon Theme ──
+  const iconThemeKeySlots = [
+    "keys.capslock.none", "keys.capslock.once", "keys.capslock.lock",
+    "keys.backspace",
+    "keys.return.default", "keys.return.go", "keys.return.search",
+    "keys.return.send", "keys.return.next", "keys.return.previous", "keys.return.done",
+    "keys.language", "keys.quickphrase", "keys.space",
+    "keys.numpad", "keys.emoji", "keys.symbols", "keys.unicode",
+    "keys.pageup", "keys.pagedown"
+  ];
+
+  const iconThemeToolbarSlots = [
+    "toolbar.undo", "toolbar.redo", "toolbar.cursor_move",
+    "toolbar.floating_toggle", "toolbar.clipboard", "toolbar.more",
+    "toolbar.language_switch", "toolbar.theme", "toolbar.icon_theme",
+    "toolbar.input_method_options", "toolbar.reload_config",
+    "toolbar.virtual_keyboard", "toolbar.one_handed_keyboard",
+    "toolbar.browse_user_data", "toolbar.settings_global",
+    "toolbar.settings_ime", "toolbar.edit_layout", "toolbar.edit_fontset"
+  ];
+
+  const iconThemeSystemSlots = [
+    "system.toolbar_toggle", "system.hide_keyboard", "system.voice_input"
+  ];
+
+  const iconThemeSlotsAll = [...iconThemeKeySlots, ...iconThemeToolbarSlots, ...iconThemeSystemSlots];
+
+  function iconThemeSlotToDisplayName(slot) {
+    return slot
+      .replace(/^(keys|toolbar|system)\./, "")
+      .replace(/\./g, " / ")
+      .replace(/_/g, " ")
+      .split(" ")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  }
+
+  function iconThemeSlotSupportsText(slot) {
+    return slot.startsWith("toolbar.") || slot.startsWith("system.");
+  }
+
+  function createDefaultIconTheme(name = "Default") {
+    return {
+      id: "builtin-default",
+      name: name,
+      author: "",
+      version: 1,
+      builtin: true,
+      thumbnailSvg: null,
+      icons: {}
+    };
+  }
+
   const state = {
     layout: deepClone(defaultLayout),
     initialLayout: deepClone(defaultLayout),
@@ -400,7 +453,10 @@
       startX: 0,
       startY: 0,
       startRect: null
-    }
+    },
+    iconThemeCatalog: [createDefaultIconTheme()],
+    selectedIconThemeId: "builtin-default",
+    initialIconThemeCatalogSignature: "",
   };
 
   const keyDialogState = { rowIndex: -1, keyIndex: -1, draft: null };
@@ -480,7 +536,7 @@
   }
 
   function hasUnsavedChanges() {
-    return layoutHasChanges() || popupHasChanges() || themeHasChanges() || themeAppSyncHasChanges();
+    return layoutHasChanges() || popupHasChanges() || themeHasChanges() || themeAppSyncHasChanges() || iconThemeHasChanges();
   }
 
   function setupBeforeUnloadGuard() {
@@ -1878,6 +1934,10 @@
       renderPopupEditor();
       syncPopupJsonFromState();
       updatePopupQrUi();
+    }
+    if (targetId === "tab-icon-theme") {
+      renderIconThemeEditor();
+      syncIconThemeJsonFromState();
     }
   }
 
@@ -7517,7 +7577,8 @@
       "layout-ime-load", "layout-ime-save",
       "layout-ime-profile", "layout-ime-profile-refresh",
       "theme-ime-load", "theme-ime-save",
-      "popup-ime-load", "popup-ime-save"
+      "popup-ime-load", "popup-ime-save",
+      "icon-theme-ime-load", "icon-theme-ime-save"
     ].forEach((id) => {
       const node = el(id);
       if (node) node.disabled = !hasApi;
@@ -7606,6 +7667,911 @@
     } catch (e) {
       setStatus("popup-editor-status", `自动读取 IME 弹出字符失败：${e.message}`, "err");
     }
+    try {
+      await loadIconThemeFromIme();
+    } catch (e) {
+      setStatus("icon-theme-editor-status", `自动读取 IME 图标主题失败：${e.message}`, "err");
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // ── Icon Theme ──
+  // ══════════════════════════════════════════════════════════════════
+
+  // Map of icon theme data URIs for file-ref previews fetched from IME
+  // key: "themeName:slot", value: data URI (blob or base64)
+  const iconThemePreviewCache = new Map();
+  // Set of icon values that are local blob/data URIs (need upload on save)
+  function isLocalIconRef(value) { return value && (value.startsWith("blob:") || value.startsWith("data:")); }
+  function isFileIconRef(value) { return value && value.startsWith("file:"); }
+
+  function currentIconThemeEntry() {
+    return state.iconThemeCatalog.find((item) => item.id === state.selectedIconThemeId) || state.iconThemeCatalog[0];
+  }
+
+  function isCurrentIconThemeEditable() {
+    return !!currentIconThemeEntry() && !currentIconThemeEntry().builtin;
+  }
+
+  function nextIconThemeName(baseName, excludeId) {
+    const existed = new Set(state.iconThemeCatalog.filter((item) => item.id !== excludeId).map((item) => item.name));
+    if (!existed.has(baseName)) return baseName;
+    let i = 2;
+    while (existed.has(`${baseName} ${i}`)) i++;
+    return `${baseName} ${i}`;
+  }
+
+  function generateIconThemeUuid() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+    const seed = `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
+    return `${seed.slice(0, 8)}-${seed.slice(8, 12)}-${seed.slice(12, 16)}-${seed.slice(16, 20)}-${seed.slice(20, 32)}`;
+  }
+
+  function iconThemeCatalogSignature() {
+    try { return JSON.stringify(state.iconThemeCatalog); } catch (_) { return ""; }
+  }
+
+  function iconThemeHasChanges() {
+    return iconThemeCatalogSignature() !== state.initialIconThemeCatalogSignature;
+  }
+
+  function updateIconThemeManageButtons(editable) {
+    ["icon-theme-rename", "icon-theme-delete"].forEach((id) => {
+      const btn = el(id); if (btn) btn.hidden = !editable;
+    });
+  }
+
+  function isInlineSvgValue(value) {
+    if (!value || typeof value !== "string") return false;
+    const clean = value.trim()
+      .replace(/^\uFEFF/, "")
+      .replace(/^<\?xml[^>]*\?>\s*/i, "")
+      .replace(/^<!DOCTYPE[^>]*>\s*/i, "")
+      .replace(/^<!--[\s\S]*?-->\s*/, "");
+    return clean.toLowerCase().startsWith("<svg");
+  }
+
+  function isInlineXmlDrawableValue(value) {
+    if (!value || typeof value !== "string") return false;
+    if (isInlineSvgValue(value)) return false;
+    if (isFileIconRef(value)) return false;
+    if (isLocalIconRef(value)) return false;
+    return value.trimStart().startsWith("<");
+  }
+
+  function vectorDrawableToSvg(xml) {
+    // Convert Android VectorDrawable XML to inline SVG for browser preview.
+    // Android fillColor/strokeColor values (#ffffff) are tint masks, not display colors,
+    // so we map them to currentColor (or "none" for #00000000).
+    if (!xml || typeof xml !== "string") return "";
+    const clean = xml.trim()
+      .replace(/^\uFEFF/, "")
+      .replace(/^<\?xml[^>]*\?>\s*/i, "")
+      .replace(/^<!--[\s\S]*?-->\s*/, "");
+    if (!clean.toLowerCase().includes("<vector")) return "";
+
+    const vpMatch = clean.match(/viewportWidth\s*=\s*"(\d+)"/i);
+    const vpHeight = clean.match(/viewportHeight\s*=\s*"(\d+)"/i);
+    const vw = vpMatch ? vpMatch[1] : "24";
+    const vh = vpHeight ? vpHeight[1] : "24";
+
+    // Recursive converter: parse <vector>/<group>/<path> structure
+    function parseTag(input, pos) {
+      let out = "";
+      while (pos < input.length) {
+        const tagStart = input.indexOf("<", pos);
+        if (tagStart === -1) break;
+
+        // Check for closing tag
+        if (input[tagStart + 1] === "/") {
+          const tagEnd = input.indexOf(">", tagStart);
+          if (tagEnd === -1) break;
+          const tagName = input.slice(tagStart + 2, tagEnd).trim().toLowerCase();
+          if (tagName === "vector" || tagName === "group") {
+            pos = tagEnd + 1;
+            return { svg: out, nextPos: pos };
+          }
+          pos = tagEnd + 1;
+          continue;
+        }
+
+        const tagEnd = input.indexOf(">", tagStart);
+        if (tagEnd === -1) break;
+
+        const tagContent = input.slice(tagStart, tagEnd + 1);
+        const isSelfClosing = tagContent.endsWith("/>");
+        const tagMatch = tagContent.match(/^<(\w+)\b([^>]*)\/?>$/is);
+        if (!tagMatch) { pos = tagEnd + 1; continue; }
+
+        const tagName = tagMatch[1].toLowerCase();
+        const attrsStr = tagMatch[2];
+
+        if (tagName === "path") {
+          const dMatch = attrsStr.match(/android:pathData\s*=\s*"([^"]*)"/i);
+          if (!dMatch) { pos = tagEnd + 1; continue; }
+
+          const fillMatch = attrsStr.match(/android:fillColor\s*=\s*"([^"]*)"/i);
+          const fillTypeMatch = attrsStr.match(/android:fillType\s*=\s*"([^"]*)"/i);
+          const strokeMatch = attrsStr.match(/android:strokeColor\s*=\s*"([^"]*)"/i);
+          const strokeWidthMatch = attrsStr.match(/android:strokeWidth\s*=\s*"([^"]*)"/i);
+          const strokeLineCapMatch = attrsStr.match(/android:strokeLineCap\s*=\s*"([^"]*)"/i);
+
+          let pathAttrs = ` d="${dMatch[1]}"`;
+
+          if (fillMatch) {
+            pathAttrs += fillMatch[1] === "#00000000" ? ` fill="none"` : ` fill="currentColor"`;
+          } else {
+            pathAttrs += ` fill="currentColor"`;
+          }
+
+          if (fillTypeMatch && fillTypeMatch[1].toLowerCase() === "evenodd") {
+            pathAttrs += ` fill-rule="evenodd"`;
+          }
+
+          if (strokeMatch) {
+            if (strokeMatch[1] !== "#00000000") {
+              pathAttrs += ` stroke="currentColor"`;
+            }
+          }
+          if (strokeWidthMatch) pathAttrs += ` stroke-width="${strokeWidthMatch[1]}"`;
+          if (strokeLineCapMatch) pathAttrs += ` stroke-linecap="${strokeLineCapMatch[1]}"`;
+
+          out += `<path${pathAttrs}/>`;
+          pos = tagEnd + 1;
+        } else if (tagName === "group") {
+          // Parse group attributes for transform.
+          // SVG applies transforms right-to-left, Android left-to-right.
+          // So we reverse: Android "scaleX=0.5 translateX=12" → SVG translate(12,0) scale(0.5,0.5)
+          let transformParts = [];
+          const scaleX = attrsStr.match(/android:scaleX\s*=\s*"([^"]*)"/i);
+          const scaleY = attrsStr.match(/android:scaleY\s*=\s*"([^"]*)"/i);
+          const tx = attrsStr.match(/android:translateX\s*=\s*"([^"]*)"/i);
+          const ty = attrsStr.match(/android:translateY\s*=\s*"([^"]*)"/i);
+          // Push in reverse order: translate first (SVG left), scale last (SVG right)
+          if (tx || ty) {
+            transformParts.push(`translate(${tx ? tx[1] : "0"},${ty ? ty[1] : "0"})`);
+          }
+          if (scaleX || scaleY) {
+            transformParts.push(`scale(${scaleX ? scaleX[1] : "1"},${scaleY ? scaleY[1] : "1"})`);
+          }
+          const transformStr = transformParts.length > 0 ? ` transform="${transformParts.join(" ")}"` : "";
+
+          if (isSelfClosing) {
+            pos = tagEnd + 1;
+            continue;
+          }
+
+          const result = parseTag(input, tagEnd + 1);
+          const children = result.svg;
+          pos = result.nextPos;
+          if (children.trim()) {
+            out += `<g${transformStr}>${children}</g>`;
+          }
+        } else if (tagName === "vector") {
+          // top-level <vector> — recurse into children
+          if (isSelfClosing) { pos = tagEnd + 1; continue; }
+          const result = parseTag(input, tagEnd + 1);
+          out += result.svg;
+          pos = result.nextPos;
+        } else {
+          pos = tagEnd + 1;
+        }
+      }
+      return { svg: out, nextPos: pos };
+    }
+
+    const result = parseTag(clean, 0);
+    if (!result.svg.trim()) return "";
+    return `<svg viewBox="0 0 ${vw} ${vh}" width="20" height="20" xmlns="http://www.w3.org/2000/svg">${result.svg}</svg>`;
+  }
+
+  async function fetchIconFilePreview(themeName, slot) {
+    if (!IME_API_BASE) return null;
+    const cacheKey = `${themeName}:${slot}`;
+    const cached = iconThemePreviewCache.get(cacheKey);
+    if (cached) return cached;
+    try {
+      const resp = await fetch(`${IME_API_BASE}/api/v1/icon-theme/preview?theme=${encodeURIComponent(themeName)}&slot=${encodeURIComponent(slot)}`);
+      if (!resp.ok) return null;
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      iconThemePreviewCache.set(cacheKey, url);
+      return url;
+    } catch (_) { return null; }
+  }
+
+  function resolveIconSlotDisplayUrl(themeName, slot, value) {
+    if (!value) return null;
+    if (isLocalIconRef(value)) return value;
+    if (isFileIconRef(value)) {
+      const cacheKey = `${themeName}:${slot}`;
+      const cached = iconThemePreviewCache.get(cacheKey);
+      if (cached) return cached;
+      // trigger async fetch and return null; caller should handle async update
+      fetchIconFilePreview(themeName, slot).then((url) => {
+        if (url) refreshSlotPreviewInDom(slot, url);
+      });
+      return null;
+    }
+    if (isInlineSvgValue(value)) return "svg:" + value;
+    return null;
+  }
+
+  function refreshSlotPreviewInDom(slot, url) {
+    const rows = document.querySelectorAll(`.icon-slot-row[data-slot="${CSS.escape(slot)}"]`);
+    rows.forEach((row) => {
+      const preview = row.querySelector(".icon-slot-custom-preview");
+      if (preview) {
+        preview.innerHTML = `<img src="${escapeAttr(url)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">`;
+      }
+    });
+  }
+
+  function renderIconThemeSlotPreviewHtml(slot, value, themeName) {
+    if (!value) return `<span style="color:var(--sub);font-size:11px;">--</span>`;
+    if (isLocalIconRef(value)) {
+      return `<img src="${escapeAttr(value)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;" data-slot-preview="${escapeAttr(slot)}">`;
+    }
+    if (isFileIconRef(value)) {
+      const cacheKey = `${themeName}:${slot}`;
+      const cached = iconThemePreviewCache.get(cacheKey);
+      if (cached) {
+        return `<img src="${escapeAttr(cached)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">`;
+      }
+      // trigger async fetch
+      if (IME_API_BASE) {
+        fetchIconFilePreview(themeName, slot).then((url) => {
+          if (url) refreshSlotPreviewInDom(slot, url);
+        });
+      }
+      return `<span style="font-size:10px;color:var(--ok);" data-slot="${escapeAttr(slot)}" class="icon-file-placeholder">PNG</span>`;
+    }
+    if (isInlineSvgValue(value)) {
+      return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;" title="SVG icon">${sanitizeSvgForPreview(value)}</div>`;
+    }
+    if (isInlineXmlDrawableValue(value)) {
+      const svg = vectorDrawableToSvg(value);
+      if (svg) return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;" title="Vector drawable">${svg}</div>`;
+      return `<span style="font-size:10px;color:var(--primary);">XML</span>`;
+    }
+    return `<span style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(value.substring(0, 4))}</span>`;
+  }
+
+  function sanitizeSvgForPreview(svg) {
+    const clean = svg.trim()
+      .replace(/^\uFEFF/, "")
+      .replace(/^<\?xml[^>]*\?>\s*/i, "")
+      .replace(/^<!DOCTYPE[^>]*>\s*/i, "")
+      .replace(/^<!--[\s\S]*?-->\s*/, "");
+    // Strip script elements and event handlers; SVG can be inserted directly into innerHTML
+    return clean
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+      .replace(/<script\b[^>]*\/>/gi, "")
+      .replace(/\bon\w+\s*=\s*"[^"]*"/gi, "")
+      .replace(/\bon\w+\s*=\s*'[^']*'/gi, "");
+  }
+
+  function buildIconThemeThumbnailHtml(icons) {
+    const svgSlots = iconThemeSlotsAll.filter((slot) => isInlineSvgValue(icons[slot]));
+    const pngSlots = iconThemeSlotsAll.filter((slot) => isFileIconRef(icons[slot]) || isLocalIconRef(icons[slot]));
+    const chosen = [...svgSlots, ...pngSlots].slice(0, 4);
+    if (!chosen.length) return `<span style="color:var(--sub);font-size:11px;">无图标</span>`;
+    return chosen.map((slot) => {
+      const v = icons[slot];
+      if (isInlineSvgValue(v)) return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}">${sanitizeSvgForPreview(v)}</div>`;
+      if (isFileIconRef(v) || isLocalIconRef(v)) return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}"><span style="color:var(--ok);font-size:11px;">PNG</span></div>`;
+      return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}"><span style="color:var(--primary);font-size:11px;">✦</span></div>`;
+    }).join("");
+  }
+
+  function renderIconThemeList() {
+    const root = el("icon-theme-list");
+    if (!root) return;
+    root.innerHTML = state.iconThemeCatalog.map((theme) => {
+      const customCount = Object.keys(theme.icons || {}).filter((k) => (theme.icons[k] || "").trim()).length;
+      const isBuiltin = !!theme.builtin;
+      const isActive = theme.id === state.selectedIconThemeId;
+      return `<button type="button" class="icon-theme-card ${isActive ? "active" : ""}" data-icon-theme-id="${escapeAttr(theme.id)}">
+        <div class="icon-theme-card-preview">${buildIconThemeThumbnailHtml(theme.icons || {})}</div>
+        <div class="icon-theme-card-name">${escapeHtml(theme.name)}</div>
+        <div class="icon-theme-card-count">${customCount} 个自定义图标${isBuiltin ? " · 内置" : ""}</div>
+      </button>`;
+    }).join("");
+    root.querySelectorAll(".icon-theme-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        const id = card.dataset.iconThemeId;
+        if (!id) return;
+        state.selectedIconThemeId = id;
+        renderIconThemeEditor();
+        syncIconThemeJsonFromState();
+      });
+    });
+    updateIconThemeManageButtons(isCurrentIconThemeEditable());
+  }
+
+  function renderIconThemeSlots() {
+    const root = el("icon-theme-slots");
+    if (!root) return;
+    const theme = currentIconThemeEntry();
+    if (!theme) return;
+    const icons = theme.icons || {};
+    const sections = [
+      { title: "键盘按键 (仅支持 SVG)", slots: iconThemeKeySlots },
+      { title: "工具栏按钮 (支持文本/Emoji/SVG/PNG)", slots: iconThemeToolbarSlots },
+      { title: "系统按钮 (支持文本/Emoji/SVG/PNG)", slots: iconThemeSystemSlots }
+    ];
+    const editable = isCurrentIconThemeEditable();
+    let html = "";
+    sections.forEach((section) => {
+      const customizedCount = section.slots.filter((slot) => icons[slot] && icons[slot].trim()).length;
+      html += `<div class="icon-slot-section-header">${escapeHtml(section.title)} — ${customizedCount} 个已自定义</div>`;
+      section.slots.forEach((slot) => {
+        const value = icons[slot] || "";
+        const hasValue = !!value.trim();
+        html += `<div class="icon-slot-row" data-slot="${escapeAttr(slot)}">
+          <div class="icon-slot-builtin-icon">${getDefaultSlotPreviewHtml(slot)}</div>
+          <div class="icon-slot-name">${escapeHtml(iconThemeSlotToDisplayName(slot))}</div>
+          <div class="icon-slot-custom-preview">${renderIconThemeSlotPreviewHtml(slot, value, theme.name)}</div>
+          <button type="button" class="icon-slot-edit-btn" data-slot="${escapeAttr(slot)}" ${!editable ? "disabled" : ""}>${hasValue ? "✎" : "+"}</button>
+        </div>`;
+      });
+    });
+    root.innerHTML = html;
+    root.querySelectorAll(".icon-slot-edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const slot = btn.dataset.slot;
+        if (slot) showIconSlotDialog(slot);
+      });
+    });
+  }
+
+  // Simple SVG icons matching the app's built-in Material drawables (24dp viewBox)
+  const DEFAULT_ICON_SVGS = {
+    "keys.capslock.none": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" fill-rule="evenodd" d="M12 2L2 11.8c-1.107 1.107-0.516 2.885 1 2.885h3v5.815c0 0.748 0.752 1.5 1.5 1.5h9c0.749 0 1.5-0.752 1.5-1.5V14.685h3c1 0 2.1-1.785 1-2.885L12 2zm0 2.8L20 12.685h-4v7.315H8V12.685H4L12 4.8z"/></svg>`,
+    "keys.capslock.once": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2L2 11.8c-1.107 1.107-0.516 2.885 1 2.885h3v5.815c0 0.748 0.752 1.5 1.5 1.5h9c0.749 0 1.5-0.752 1.5-1.5V14.685h3c1 0 2.1-1.785 1-2.885L12 2z"/></svg>`,
+    "keys.capslock.lock": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 0L2 9.8c-1.107 1.107-0.516 2.885 1 2.885h3v5.815C6 19.248 6.752 20 7.5 20h9c0.749 0 1.5-0.752 1.5-1.5V12.685h3c1 0 2.1-1.785 1-2.885L12 0z"/><rect x="6.6" y="22" width="10.8" height="2" rx="0.4" fill="currentColor"/></svg>`,
+    "keys.backspace": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z"/></svg>`,
+    "keys.return.default": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19 7v4H5.83l3.58-3.59L8 6l-6 6 6 6 1.41-1.41L5.83 13H21V7h-2z"/></svg>`,
+    "keys.return.go": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/></svg>`,
+    "keys.return.search": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>`,
+    "keys.return.send": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2 .01 7z"/></svg>`,
+    "keys.return.next": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/></svg>`,
+    "keys.return.previous": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.41 16.59L7.83 13H22V11H7.83l3.59-3.59L10 6l-6 6 6 6zM3 18V6H1v12z"/></svg>`,
+    "keys.return.done": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>`,
+    "keys.language": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 00-1.38-3.56A8.03 8.03 0 0118.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 015.08 16zm2.95-8H5.08a7.99 7.99 0 014.33-3.56A15.65 15.65 0 008.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2s.07-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 01-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2s-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg>`,
+    "keys.quickphrase": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 17h3l2-4V7H5v6h3l-2 4zm8 0h3l2-4V7h-6v6h3l-2 4z"/></svg>`,
+    "keys.space": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M18 9v4H6V9H4v6h16V9h-2z"/></svg>`,
+    "keys.numpad": `<svg viewBox="0 0 24 24" width="20" height="20"><g fill="currentColor"><rect x="4" y="2" width="4" height="4" rx="1"/><rect x="10" y="2" width="4" height="4" rx="1"/><rect x="16" y="2" width="4" height="4" rx="1"/><rect x="4" y="8" width="4" height="4" rx="1"/><rect x="10" y="8" width="4" height="4" rx="1"/><rect x="16" y="8" width="4" height="4" rx="1"/><rect x="4" y="14" width="4" height="4" rx="1"/><rect x="10" y="14" width="4" height="4" rx="1"/><rect x="16" y="14" width="4" height="4" rx="1"/><rect x="4" y="20" width="4" height="4" rx="1"/><rect x="10" y="20" width="10" height="4" rx="1"/></g></svg>`,
+    "keys.emoji": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>`,
+    "keys.symbols": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M10 17c0 .55-.45 1-1 1s-1-.45-1-1 .45-1 1-1 1 .45 1 1zm-3-2c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm5-0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-3-3c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm5-0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-3-3.5c-.28 0-.5-.22-.5-.5s.22-.5.5-.5.5.22.5.5-.22.5-.5.5zM9.5 11c.28 0 .5-.22.5-.5s-.22-.5-.5-.5-.5.22-.5.5.22.5.5.5zM14.5 8c.28 0 .5-.22.5-.5s-.22-.5-.5-.5-.5.22-.5.5.22.5.5.5z"/></svg>`,
+    "keys.unicode": `<svg viewBox="0 0 24 24" width="20" height="20"><text x="4" y="18" font-size="16" font-weight="bold" fill="currentColor">U</text></svg>`,
+    "keys.pageup": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6 1.41 1.41z"/></svg>`,
+    "keys.pagedown": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>`,
+    "toolbar.undo": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>`,
+    "toolbar.redo": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg>`,
+    "toolbar.cursor_move": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="m17,16 l4,-4L17,8Z M7,8 l-4,4 4,4z M8,3v2h3.0137V19H8v2h3.0137,2H16V19H13.0137V5H16V3h-2.9863,-2z"/></svg>`,
+    "toolbar.floating_toggle": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20,3L4,3c-1.1,0 -1.99,0.9 -1.99,2L2,15c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2L22,5c0,-1.1 -0.9,-2 -2,-2zM11,6h2v2h-2L11,6zM11,9h2v2h-2v-2zM8,8h2v2L8,10L8,8zM8,11h2v2L8,13v-2zM7,13L5,13v-2h2v2zM7,10L5,10L5,8h2v2zM16,17L8,17v-2h8v2zM16,11h-2v-2h2v2zM16,8h-2L14,6h2v2zM19,11h-2v-2h2v2zM19,8h-2L17,6h2v2z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4,20 L20,20"/></svg>`,
+    "toolbar.clipboard": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>`,
+    "toolbar.more": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>`,
+    "toolbar.language_switch": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 00-1.38-3.56A8.03 8.03 0 0118.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 015.08 16zm2.95-8H5.08a7.99 7.99 0 014.33-3.56A15.65 15.65 0 008.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2s.07-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2z"/></svg>`,
+    "toolbar.theme": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67A2.5 2.5 0 0112 22zm0-18c-4.41 0-8 3.59-8 8s3.59 8 8 8c.28 0 .5-.22.5-.5a.54.54 0 00-.14-.35c-.41-.46-.63-1.05-.63-1.65a2.5 2.5 0 012.5-2.5H16c2.21 0 4-1.79 4-4 0-3.86-3.59-7-8-7z"/><circle cx="6.5" cy="11.5" r="1.5" fill="currentColor"/><circle cx="9.5" cy="7.5" r="1.5" fill="currentColor"/><circle cx="14.5" cy="7.5" r="1.5" fill="currentColor"/><circle cx="17.5" cy="11.5" r="1.5" fill="currentColor"/></svg>`,
+    "toolbar.icon_theme": `<svg viewBox="0 0 24 24" width="20" height="20"><g transform="translate(0,0) scale(0.5)"><path fill="currentColor" d="M20,5L4,5c-1.1,0 -1.99,0.9 -1.99,2L2,17c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2L22,7c0,-1.1 -0.9,-2 -2,-2zM11,8h2v2h-2L11,8zM11,11h2v2h-2v-2zM8,8h2v2L8,10L8,8zM8,11h2v2L8,13v-2zM7,13L5,13v-2h2v2zM7,10L5,10L5,8h2v2zM16,17L8,17v-2h8v2zM16,13h-2v-2h2v2zM16,10h-2L14,8h2v2zM19,13h-2v-2h2v2zM19,10h-2L17,8h2v2z"/></g><g transform="translate(12,0) scale(0.5)"><path fill="currentColor" d="M12,2C6.49,2 2,6.49 2,12s4.49,10 10,10c1.38,0 2.5,-1.12 2.5,-2.5c0,-0.61 -0.23,-1.2 -0.64,-1.67c-0.08,-0.1 -0.13,-0.21 -0.13,-0.33c0,-0.28 0.22,-0.5 0.5,-0.5H16c3.31,0 6,-2.69 6,-6C22,6.04 17.51,2 12,2zM17.5,13c-0.83,0 -1.5,-0.67 -1.5,-1.5c0,-0.83 0.67,-1.5 1.5,-1.5s1.5,0.67 1.5,1.5C19,12.33 18.33,13 17.5,13zM14.5,9C13.67,9 13,8.33 13,7.5C13,6.67 13.67,6 14.5,6S16,6.67 16,7.5C16,8.33 15.33,9 14.5,9zM5,11.5C5,10.67 5.67,10 6.5,10S8,10.67 8,11.5C8,12.33 7.33,13 6.5,13S5,12.33 5,11.5zM11,7.5C11,8.33 10.33,9 9.5,9S8,8.33 8,7.5C8,6.67 8.67,6 9.5,6S11,6.67 11,7.5z"/></g><g transform="translate(0,12) scale(0.5)"><path fill="currentColor" d="M12,1C10.7,1 9.5997,1.84 9.1797,3L5,3C3.9,3 3,3.9 3,5L3,20C3,21.1 3.9,22 5,22L19,22C20.1,22 21,21.1 21,20L21,5C21,3.9 20.1,3 19,3L14.8203,3C14.4003,1.84 13.3,1 12,1zM12,3A0.75,0.75 0,0 1,12.75 3.75A0.75,0.75 0,0 1,12 4.5A0.75,0.75 0,0 1,11.25 3.75A0.75,0.75 0,0 1,12 3zM5,5L7,5L7,7L17,7L17,5L19,5L19,20L5,20L5,5zM7,8.5L7,10.5L17,10.5L17,8.5L7,8.5zM7,12.5L7,14.5L17,14.5L17,12.5L7,12.5zM7,16.5L7,18.5L14,18.5L14,16.5L7,16.5z"/></g><g transform="translate(12,12) scale(0.5)"><path fill="currentColor" d="M12,15c1.66,0 2.99,-1.34 2.99,-3L15,6c0,-1.66 -1.34,-3 -3,-3S9,4.34 9,6v6c0,1.66 1.34,3 3,3zM17.3,12c0,3 -2.54,5.1 -5.3,5.1S6.7,15 6.7,12L5,12c0,3.42 2.72,6.23 6,6.72L11,22h2v-3.28c3.28,-0.48 6,-3.3 6,-6.72h-1.7z"/></g></svg>`,
+    "toolbar.input_method_options": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>`,
+    "toolbar.reload_config": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0020 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 004 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>`,
+    "toolbar.virtual_keyboard": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 12H4V7h16v10zM9 8H7v2h2V8zm4 0h-2v2h2V8zm4 0h-2v2h2V8zm-8 4H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z"/></svg>`,
+    "toolbar.one_handed_keyboard": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/></svg>`,
+    "toolbar.browse_user_data": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V6h5.17l2 2H20v10z"/></svg>`,
+    "toolbar.settings_global": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>`,
+    "toolbar.settings_ime": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 00-1.38-3.56A8.03 8.03 0 0118.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 015.08 16z"/></svg>`,
+    "toolbar.edit_layout": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 12H4V7h16v10zM7 8H5v3h2V8zm3 0H8v3h2V8zm3 5h-2v3h2v-3zm3 0h-2v3h2v-3zm3 0h-2v3h2v-3z"/></svg>`,
+    "toolbar.edit_fontset": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9.93 13.5h4.14L12 7.98 9.93 13.5zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5l-1.14-3H9.17l-1.12 3H5.96l5.11-13h1.86l5.11 13h-2.09z"/></svg>`,
+    "system.toolbar_toggle": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z"/></svg>`,
+    "system.hide_keyboard": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>`,
+    "system.voice_input": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>`
+  };
+
+  function getDefaultSlotPreviewHtml(slot) {
+    return DEFAULT_ICON_SVGS[slot] || `<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+  }
+
+  function renderIconThemeEditor() {
+    const editable = isCurrentIconThemeEditable();
+    setIconThemeJsonEditable(editable);
+    renderIconThemeList();
+    renderIconThemeSlots();
+    syncIconThemeJsonHeight();
+    setStatus("icon-theme-editor-status", editable ? "" : "内置主题不可编辑，请先新建或导入主题", "");
+  }
+
+  function serializeCurrentIconTheme() {
+    const theme = currentIconThemeEntry();
+    return {
+      name: theme.name, author: theme.author || "",
+      version: theme.version || 1, thumbnailSvg: theme.thumbnailSvg || null,
+      icons: deepClone(theme.icons || {})
+    };
+  }
+
+  function syncIconThemeJsonFromState() {
+    const text = `${prettyJson(serializeCurrentIconTheme())}\n`;
+    const textarea = el("icon-theme-json");
+    if (textarea) textarea.value = text;
+    setStatus("icon-theme-json-status", "JSON 已同步", "ok");
+  }
+
+  function setIconThemeJsonEditable(editable) {
+    const textarea = el("icon-theme-json");
+    if (textarea) textarea.readOnly = !editable;
+  }
+
+  function syncIconThemeJsonHeight() {}
+
+  let iconSlotDialogState = { slot: "", draftValue: "" };
+
+  function showIconSlotDialog(slot) {
+    const theme = currentIconThemeEntry();
+    if (!theme || theme.builtin) return;
+    const currentValue = (theme.icons && theme.icons[slot]) || "";
+    iconSlotDialogState = { slot, draftValue: currentValue };
+    const dialog = el("icon-slot-dialog");
+    const title = el("icon-slot-dialog-title");
+    if (title) title.textContent = `编辑图标 — ${iconThemeSlotToDisplayName(slot)}`;
+
+    const builtinPreview = el("icon-slot-builtin-preview");
+    if (builtinPreview)       builtinPreview.innerHTML = `<span style="font-size:28px;display:flex;align-items:center;justify-content:center;">${getDefaultSlotPreviewHtml(slot)}</span>`;
+
+    const customPreview = el("icon-slot-custom-preview");
+    if (customPreview) {
+      const url = resolveIconSlotDisplayUrl(theme.name, slot, currentValue);
+      if (!currentValue) {
+        customPreview.innerHTML = `<span style="color:var(--sub);font-size:11px;">空</span>`;
+      } else if (url && !url.startsWith("svg:")) {
+        customPreview.innerHTML = `<img src="${escapeAttr(url)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">`;
+      } else if (url && url.startsWith("svg:")) {
+        customPreview.innerHTML = sanitizeSvgForPreview(url.slice(4));
+      } else {
+        customPreview.innerHTML = renderIconThemeSlotPreviewHtml(slot, currentValue, theme.name);
+      }
+    }
+
+    const supportsText = iconThemeSlotSupportsText(slot);
+    const emojiRow = el("icon-slot-emoji-row");
+    if (emojiRow) emojiRow.hidden = !supportsText;
+    const emojiInput = el("icon-slot-emoji");
+    if (emojiInput) {
+      const isXml = isInlineSvgValue(currentValue) || isInlineXmlDrawableValue(currentValue);
+      emojiInput.value = supportsText && !isXml && !isFileIconRef(currentValue) && !isLocalIconRef(currentValue) ? currentValue : "";
+    }
+    const svgRow = el("icon-slot-pasted-svg");
+    if (svgRow) svgRow.hidden = false;
+    const svgTextarea = el("icon-slot-svg-textarea");
+    if (svgTextarea) svgTextarea.value = isInlineSvgValue(currentValue) || isInlineXmlDrawableValue(currentValue) ? currentValue : "";
+    const fileInput = el("icon-slot-file-input");
+    if (fileInput) fileInput.value = "";
+    setStatus("icon-slot-status", "", "");
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function applyIconSlotChange(value) {
+    const theme = currentIconThemeEntry();
+    if (!theme || theme.builtin) return;
+    const slot = iconSlotDialogState.slot;
+    if (!slot) return;
+    if (!theme.icons) theme.icons = {};
+    if (value == null || value.trim() === "") {
+      delete theme.icons[slot];
+    } else {
+      theme.icons[slot] = value.trim();
+    }
+    iconSlotDialogState.draftValue = value || "";
+    renderIconThemeSlots();
+    renderIconThemeList();
+    syncIconThemeJsonFromState();
+    el("icon-slot-dialog").close();
+    setStatus("icon-theme-editor-status", `已更新图标：${iconThemeSlotToDisplayName(slot)}`, "ok");
+  }
+
+  function handleIconSlotFileSelected(file) {
+    if (!file) return;
+    const slot = iconSlotDialogState.slot;
+    const fileName = file.name.toLowerCase();
+    const isSvg = fileName.endsWith(".svg") || file.type === "image/svg+xml";
+    const isImage = file.type.startsWith("image/") && !isSvg;
+
+    if (slot.startsWith("keys.")) {
+      // Keyboard keys only support SVG
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = reader.result;
+        if (typeof text === "string" && text.trim().toLowerCase().includes("<svg")) {
+          applyIconSlotChange(text.trim());
+        } else if (typeof text === "string" && text.trim().toLowerCase().includes("<vector")) {
+          applyIconSlotChange(text.trim());
+        } else {
+          setStatus("icon-slot-status", "键盘按键仅支持 SVG 格式", "err");
+        }
+      };
+      reader.onerror = () => setStatus("icon-slot-status", "文件读取失败", "err");
+      reader.readAsText(file);
+    } else {
+      if (isImage) {
+        // PNG/JPEG/WebP → store as data URI
+        const reader = new FileReader();
+        reader.onload = () => applyIconSlotChange(reader.result);
+        reader.onerror = () => setStatus("icon-slot-status", "文件读取失败", "err");
+        reader.readAsDataURL(file);
+      } else {
+        // SVG/XML → store as text
+        const reader = new FileReader();
+        reader.onload = () => {
+          const text = reader.result;
+          if (typeof text === "string" && (text.includes("<svg") || text.includes("<vector"))) {
+            applyIconSlotChange(text.trim());
+          } else {
+            setStatus("icon-slot-status", "不支持的文件格式，仅支持 SVG/XML/PNG", "err");
+          }
+        };
+        reader.onerror = () => setStatus("icon-slot-status", "文件读取失败", "err");
+        reader.readAsText(file);
+      }
+    }
+  }
+
+  // ── IME Bridge ──
+
+  async function loadIconThemeFromIme() {
+    if (!IME_API_BASE) return;
+    const data = await imeApiRequest("/api/v1/icon-theme");
+    if (data && Array.isArray(data.themes)) {
+      // Clear preview cache for previous themes
+      iconThemePreviewCache.clear();
+      const themes = data.themes.map((raw) => ({
+        id: raw.builtin ? "builtin-default" : `custom-${generateIconThemeUuid()}`,
+        name: raw.name || "Untitled",
+        author: raw.author || "",
+        version: raw.version || 1,
+        builtin: !!raw.builtin,
+        thumbnailSvg: raw.thumbnailSvg || null,
+        icons: raw.icons || {}
+      }));
+      if (themes.length) {
+        state.iconThemeCatalog = themes;
+        const activeName = data.activeThemeName || themes[0]?.name || "Default";
+        const activeTheme = themes.find((t) => t.name === activeName) || themes[0];
+        state.selectedIconThemeId = activeTheme?.id || "builtin-default";
+        renderIconThemeEditor();
+        syncIconThemeJsonFromState();
+        // Prefetch file previews for current theme
+        const theme = currentIconThemeEntry();
+        if (theme && theme.icons) {
+          for (const [slot, value] of Object.entries(theme.icons)) {
+            if (isFileIconRef(value)) fetchIconFilePreview(theme.name, slot);
+          }
+        }
+        setStatus("icon-theme-editor-status", `已从 IME 读取 ${themes.length} 个图标主题`, "ok");
+      }
+    }
+  }
+
+  async function saveIconThemeToIme() {
+    if (!IME_API_BASE) return;
+    const theme = currentIconThemeEntry();
+    if (!theme || theme.builtin) {
+      setStatus("icon-theme-editor-status", "请先选择或新建可编辑的主题", "err");
+      return;
+    }
+    // Collect local data URIs that need uploading as files
+    const icons = theme.icons || {};
+    const uploads = {};
+    const cleanIcons = {};
+    for (const [slot, value] of Object.entries(icons)) {
+      if (!value) continue;
+      if (isLocalIconRef(value)) {
+        // Keep as data URI; server will extract base64 and save as file
+        cleanIcons[slot] = value;
+        uploads[slot] = value;
+      } else {
+        cleanIcons[slot] = value;
+      }
+    }
+    const payload = {
+      name: theme.name,
+      author: theme.author || "",
+      version: theme.version || 1,
+      thumbnailSvg: theme.thumbnailSvg || null,
+      icons: cleanIcons
+    };
+    if (Object.keys(uploads).length > 0) {
+      payload._uploads = uploads;
+    }
+    await imeApiRequest("/api/v1/icon-theme", {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+    // After successful save, reload to get updated file refs
+    await loadIconThemeFromIme();
+    setStatus("icon-theme-editor-status", "图标主题已保存到 IME", "ok");
+  }
+
+  // ── ZIP Export (matching app structure) ──
+
+  async function exportIconThemeAsZip() {
+    const theme = currentIconThemeEntry();
+    if (!theme) throw new Error("no theme selected");
+    const zip = new JSZip();
+    const safeName = theme.name.replace(/[\\/:*?"<>|]/g, "_") || "theme";
+
+    // Prepare normalized icons for export: local data URIs → base64 files in ZIP
+    const exportIcons = {};
+    const fileEntries = []; // { slot, fileName, dataBase64, mime }
+
+    for (const [slot, value] of Object.entries(theme.icons || {})) {
+      if (!value) continue;
+      if (isLocalIconRef(value)) {
+        const match = value.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          const mime = match[1];
+          const ext = mime.includes("png") ? "png" : mime.includes("jpeg") ? "jpg" :
+            mime.includes("svg") ? "svg" : mime.includes("webp") ? "webp" : "png";
+          const fileName = `${slot.replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
+          exportIcons[slot] = `file:button_icons/${safeName}/${fileName}`;
+          fileEntries.push({ fileName, dataBase64: match[2], ext });
+        }
+      } else if (isFileIconRef(value)) {
+        // Try to fetch the file from IME and re-pack it
+        const blobUrl = await fetchIconFilePreview(theme.name, slot);
+        if (blobUrl) {
+          try {
+            const resp = await fetch(blobUrl);
+            const blob = await resp.blob();
+            const base64 = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result.split(",")[1]);
+              reader.readAsDataURL(blob);
+            });
+            const ext = blob.type.includes("png") ? "png" : blob.type.includes("jpeg") ? "jpg" :
+              blob.type.includes("svg") ? "svg" : blob.type.includes("webp") ? "webp" : "png";
+            const fileName = value.replace("file:", "").split("/").pop() || `${slot.replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
+            exportIcons[slot] = `file:button_icons/${safeName}/${fileName}`;
+            fileEntries.push({ fileName, dataBase64: base64, ext });
+          } catch (_) { exportIcons[slot] = value; }
+        } else {
+          exportIcons[slot] = value;
+        }
+      } else {
+        exportIcons[slot] = value;
+      }
+    }
+
+    const exportTheme = {
+      name: theme.name,
+      author: theme.author || "",
+      version: theme.version || 1,
+      thumbnailSvg: theme.thumbnailSvg || null,
+      icons: exportIcons
+    };
+
+    // JSON entry
+    zip.file(`${safeName}.json`, JSON.stringify(exportTheme, null, 2));
+
+    // File entries under button_icons/<safeName>/
+    for (const entry of fileEntries) {
+      zip.file(`button_icons/${safeName}/${entry.fileName}`, entry.dataBase64, { base64: true });
+    }
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    downloadBlob(`${safeName}.icon-theme.zip`, blob);
+    setStatus("icon-theme-editor-status", `已导出 ZIP：${safeName}.icon-theme.zip`, "ok");
+  }
+
+  // ── ZIP Import (matching app structure) ──
+
+  async function importIconThemeFromZipFile(file) {
+    const zip = await JSZip.loadAsync(file);
+    let jsonText = null;
+    const fileDataMap = {}; // relativePath → base64
+
+    const promises = [];
+    zip.forEach((relativePath, zipEntry) => {
+      if (zipEntry.dir) return;
+      if (relativePath.endsWith(".json")) {
+        promises.push(zipEntry.async("string").then((text) => { jsonText = text; }));
+      } else {
+        promises.push(zipEntry.async("base64").then((b64) => {
+          fileDataMap[relativePath] = b64;
+        }));
+      }
+    });
+    await Promise.all(promises);
+    if (!jsonText) throw new Error("ZIP 中未找到 JSON 文件");
+
+    const parsed = JSON.parse(jsonText);
+    const icons = {};
+    if (parsed.icons && typeof parsed.icons === "object") {
+      for (const [slot, value] of Object.entries(parsed.icons)) {
+        if (typeof value === "string" && value.startsWith("file:")) {
+          // Resolve file reference to data URI from ZIP contents
+          const refPath = value.replace("file:", "");
+          const refName = refPath.split("/").pop();
+          let found = false;
+          for (const [zipPath, b64] of Object.entries(fileDataMap)) {
+            if (zipPath.endsWith(refName || "")) {
+              const ext = (refName || "").split(".").pop()?.toLowerCase() || "png";
+              const mime = ext === "svg" ? "image/svg+xml" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : "image/png";
+              icons[slot] = `data:${mime};base64,${b64}`;
+              found = true;
+              break;
+            }
+          }
+          // If not found as base64, keep the file reference
+          if (!found) icons[slot] = value;
+        } else {
+          icons[slot] = value;
+        }
+      }
+    }
+
+    const theme = {
+      id: `custom-${generateIconThemeUuid()}`,
+      name: nextIconThemeName(parsed.name || "Imported"),
+      author: parsed.author || "",
+      version: parsed.version || 1,
+      builtin: false,
+      thumbnailSvg: parsed.thumbnailSvg || null,
+      icons
+    };
+    state.iconThemeCatalog.unshift(theme);
+    state.selectedIconThemeId = theme.id;
+    renderIconThemeEditor();
+    syncIconThemeJsonFromState();
+    return theme;
+  }
+
+  // ── QR Share (to be implemented) ──
+  // The app uses schema "f5a-icon-theme-qr-v1" with transfer type "I"
+
+  function initIconThemeTab() {
+    el("icon-theme-create-new").addEventListener("click", () => {
+      const id = `custom-${generateIconThemeUuid()}`;
+      const name = nextIconThemeName("New Theme");
+      const newTheme = { id, name, author: "", version: 1, builtin: false, thumbnailSvg: null, icons: {} };
+      state.iconThemeCatalog.unshift(newTheme);
+      state.selectedIconThemeId = id;
+      renderIconThemeEditor();
+      syncIconThemeJsonFromState();
+      setStatus("icon-theme-editor-status", `已创建主题：${name}`, "ok");
+    });
+
+    el("icon-theme-rename").addEventListener("click", () => {
+      const theme = currentIconThemeEntry();
+      if (!theme || theme.builtin) return;
+      const nextName = prompt("输入新名称", theme.name);
+      if (nextName == null) return;
+      const trimmed = nextName.trim();
+      if (!trimmed) { setStatus("icon-theme-editor-status", "名称不能为空", "err"); return; }
+      const resolved = nextIconThemeName(trimmed, theme.id);
+      theme.name = resolved;
+      renderIconThemeEditor();
+      syncIconThemeJsonFromState();
+      setStatus("icon-theme-editor-status", `已重命名：${resolved}`, "ok");
+    });
+
+    el("icon-theme-delete").addEventListener("click", () => {
+      const theme = currentIconThemeEntry();
+      if (!theme || theme.builtin) return;
+      if (!confirm(`确认删除图标主题「${theme.name}」？`)) return;
+      state.iconThemeCatalog = state.iconThemeCatalog.filter((item) => item.id !== theme.id);
+      state.selectedIconThemeId = state.iconThemeCatalog[0]?.id || "builtin-default";
+      renderIconThemeEditor();
+      syncIconThemeJsonFromState();
+      setStatus("icon-theme-editor-status", `已删除主题：${theme.name}`, "ok");
+    });
+
+    el("icon-theme-export-json").addEventListener("click", () => {
+      const theme = currentIconThemeEntry();
+      downloadFile(`${theme.name}.icon-theme.json`, `${prettyJson(serializeCurrentIconTheme())}\n`);
+      setStatus("icon-theme-editor-status", `已导出 JSON：${theme.name}`, "ok");
+    });
+
+    el("icon-theme-import-json").addEventListener("click", () => {
+      const input = el("icon-theme-import-json-file");
+      if (input) { input.value = ""; input.click(); }
+    });
+
+    el("icon-theme-import-json-file").addEventListener("change", async (ev) => {
+      const file = ev.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const theme = {
+          id: `custom-${generateIconThemeUuid()}`, name: nextIconThemeName(parsed.name || "Imported"),
+          author: parsed.author || "", version: parsed.version || 1, builtin: false,
+          thumbnailSvg: parsed.thumbnailSvg || null, icons: parsed.icons || {}
+        };
+        state.iconThemeCatalog.unshift(theme);
+        state.selectedIconThemeId = theme.id;
+        renderIconThemeEditor(); syncIconThemeJsonFromState();
+        setStatus("icon-theme-editor-status", `已导入主题：${theme.name}`, "ok");
+      } catch (e) { setStatus("icon-theme-editor-status", `导入失败：${e.message}`, "err"); }
+      finally { ev.target.value = ""; }
+    });
+
+    el("icon-theme-import-shared").addEventListener("click", () => {
+      const input = el("icon-theme-import-file");
+      if (input) { input.value = ""; input.click(); }
+    });
+
+    el("icon-theme-import-file").addEventListener("change", async (ev) => {
+      const file = ev.target.files?.[0];
+      if (!file) return;
+      try {
+        const fileName = String(file.name || "").toLowerCase();
+        const isZip = file.type === "application/zip" || fileName.endsWith(".zip");
+        if (isZip) {
+          await importIconThemeFromZipFile(file);
+          setStatus("icon-theme-editor-status", `已导入 ZIP`, "ok");
+        } else {
+          const text = await file.text();
+          let parsed;
+          try { parsed = JSON.parse(text); } catch (_) { throw new Error("不是有效的 JSON 或 ZIP 文件"); }
+          const theme = {
+            id: `custom-${generateIconThemeUuid()}`, name: nextIconThemeName(parsed.name || "Imported"),
+            author: parsed.author || "", version: parsed.version || 1, builtin: false,
+            thumbnailSvg: parsed.thumbnailSvg || null, icons: parsed.icons || {}
+          };
+          state.iconThemeCatalog.unshift(theme);
+          state.selectedIconThemeId = theme.id;
+          renderIconThemeEditor(); syncIconThemeJsonFromState();
+          setStatus("icon-theme-editor-status", `已导入主题：${theme.name}`, "ok");
+        }
+      } catch (e) { setStatus("icon-theme-editor-status", `导入失败：${e.message}`, "err"); }
+      finally { ev.target.value = ""; }
+    });
+
+    // IME buttons
+    el("icon-theme-ime-load").addEventListener("click", async () => {
+      try { await loadIconThemeFromIme(); } catch (e) { setStatus("icon-theme-editor-status", `读取失败：${e.message}`, "err"); }
+    });
+    el("icon-theme-ime-save").addEventListener("click", async () => {
+      try { await saveIconThemeToIme(); } catch (e) { setStatus("icon-theme-editor-status", `保存失败：${e.message}`, "err"); }
+    });
+
+    // Export as ZIP (matching app structure)
+    el("icon-theme-export-zip")?.addEventListener("click", async () => {
+      try { await exportIconThemeAsZip(); } catch (e) { setStatus("icon-theme-editor-status", `ZIP 导出失败：${e.message}`, "err"); }
+    });
+
+    // Dialog buttons
+    el("icon-slot-cancel").addEventListener("click", () => { el("icon-slot-dialog").close(); });
+    el("icon-slot-save").addEventListener("click", () => {
+      const slot = iconSlotDialogState.slot;
+      if (!slot) return;
+      const supportsText = iconThemeSlotSupportsText(slot);
+      const emojiInput = el("icon-slot-emoji");
+      const svgTextarea = el("icon-slot-svg-textarea");
+      if (supportsText && emojiInput && emojiInput.value.trim()) {
+        applyIconSlotChange(emojiInput.value.trim()); return;
+      }
+      if (svgTextarea && svgTextarea.value.trim()) {
+        applyIconSlotChange(svgTextarea.value.trim()); return;
+      }
+      applyIconSlotChange("");
+    });
+    el("icon-slot-clear").addEventListener("click", () => { applyIconSlotChange(""); setStatus("icon-theme-editor-status", "已清除图标", "ok"); });
+    el("icon-slot-select-file").addEventListener("click", () => {
+      const input = el("icon-slot-file-input");
+      if (input) input.click();
+    });
+    el("icon-slot-file-input").addEventListener("change", (ev) => {
+      const file = ev.target.files?.[0];
+      if (file) handleIconSlotFileSelected(file);
+      ev.target.value = "";
+    });
+
+    renderIconThemeEditor();
+    syncIconThemeJsonFromState();
+    state.initialIconThemeCatalogSignature = iconThemeCatalogSignature();
   }
 
   async function main() {
@@ -7616,6 +8582,7 @@
     initLayoutTab();
     initThemeTab();
     initPopupTab();
+    initIconThemeTab();
     setupQrActions();
     setupThemeQrActions();
     setupPopupQrActions();
