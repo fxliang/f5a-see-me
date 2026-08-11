@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-06-25T15:08+08:00";
+  const WEB_EDITOR_BUILD = "2026-08-11T15:43+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -4479,6 +4479,32 @@
   function normalizeMacroStepsForSave(steps) {
     return steps.map((step) => {
       const type = step.type || "tap";
+      if (type === "edit") {
+        const action = String(step.keys?.[0]?.code || "");
+        return {
+          type,
+          keys: [{ keyType: "fcitx", code: macroEditActions.includes(action) ? action : (macroEditActions[0] || "copy") }],
+          text: ""
+        };
+      }
+      if (type === "app") {
+        const action = String(step.keys?.[0]?.code || "");
+        return {
+          type,
+          keys: [{ keyType: "fcitx", code: macroAppActions.includes(action) ? action : (macroAppActions[0] || "theme") }],
+          text: ""
+        };
+      }
+      if (type === "layer") {
+        return {
+          type,
+          keys: [{ keyType: "fcitx", code: normalizeLayerMode(step.keys?.[0]?.code) }],
+          text: String(step.text || "")
+        };
+      }
+      if (type === "text") {
+        return { type, keys: [], text: String(step.text || "") };
+      }
       const keys = sanitizeMacroKeys(
         Array.isArray(step.keys)
           ? step.keys.map((k) => ({
