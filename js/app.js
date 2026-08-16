@@ -1988,29 +1988,55 @@
     rows.querySelectorAll(".theme-color-row").forEach((row) => {
       const token = row.dataset.token;
       const input = row.querySelector(".theme-color-input");
-      const applyColor = (nextColor) => {
-        const normalized = normalizeColorValue(nextColor);
-        if (normalized == null) return false;
-        theme.colors[token] = normalized;
+      const syncThemeAfterColorChange = () => {
         renderThemeList();
         syncThemeJsonFromState();
         renderThemeSupplementPreview();
         syncLayoutUiFromState();
+      };
+      let pendingFullSync = null;
+      const scheduleFullSyncDebounced = () => {
+        clearTimeout(pendingFullSync);
+        pendingFullSync = setTimeout(syncThemeAfterColorChange, 160);
+      };
+      const flushFullSync = () => {
+        if (pendingFullSync) {
+          clearTimeout(pendingFullSync);
+          pendingFullSync = null;
+        }
+        syncThemeAfterColorChange();
+      };
+      const applyColorLive = (nextColor) => {
+        const normalized = normalizeColorValue(nextColor);
+        if (normalized == null) return false;
+        theme.colors[token] = normalized;
+        applyPreviewThemeSurface();
         return true;
       };
-      const syncInputToState = ({ strict = false } = {}) => {
-        if (!applyColor(input.value.trim())) {
+      const syncInputToState = ({ strict = false, live = false } = {}) => {
+        if (!applyColorLive(input.value.trim())) {
           if (!strict) return;
           input.value = toArgbHex(resolveThemeTokenColor(token));
           setStatus("theme-editor-status", `${themeColorLabels[token] || token} 颜色格式无效`, "err");
+          return;
+        }
+        syncThemePickerFromArgbInput(input);
+        if (live) {
+          scheduleFullSyncDebounced();
         } else {
-          syncThemePickerFromArgbInput(input);
+          flushFullSync();
           setStatus("theme-editor-status", "主题颜色已更新并同步到预览", "ok");
           input.jscolor?.hide();
         }
       };
       installThemeColorPicker(input, token, syncInputToState);
-      input.addEventListener("change", () => syncInputToState({ strict: true }));
+      input.addEventListener("change", () => {
+        if (pendingFullSync) {
+          clearTimeout(pendingFullSync);
+          pendingFullSync = null;
+        }
+        syncInputToState({ strict: true });
+      });
       input.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") return;
         event.preventDefault();
@@ -2033,7 +2059,7 @@
         valueElement: null,
         onInput: () => {
           syncArgbInputFromInlinePicker(input);
-          if (typeof onChange === "function") onChange();
+          if (typeof onChange === "function") onChange({ live: true });
         }
       });
       const originalShow = picker.show.bind(picker);
