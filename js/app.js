@@ -303,6 +303,37 @@
     "Market", "Go", "Off", "Shop"
   ];
 
+  // Fcitx key name -> output symbol hints, mirroring the fcitx5-android app's
+  // MacroEditorActivity SYMBOL_KEY_MAP (lookup is case-insensitive).
+  const fcitxKeySymbolMap = {
+    exclam: "!", at: "@", numbersign: "#", dollar: "$", percent: "%",
+    asciicircum: "^", ampersand: "&", asterisk: "*", parenleft: "(", parenright: ")",
+    minus: "-", underscore: "_", equal: "=", plus: "+",
+    bracketleft: "[", braceleft: "{", bracketright: "]", braceright: "}",
+    backslash: "\\", bar: "|", semicolon: ";", colon: ":", apostrophe: "'",
+    quotedbl: "\"", grave: "`", asciitilde: "~", comma: ",", less: "<",
+    period: ".", greater: ">", slash: "/", question: "?",
+    multiply: "*", add: "+", subtract: "-", divide: "÷", separator: ",",
+    kp_multiply: "*", kp_add: "+", kp_subtract: "-", kp_divide: "÷",
+    kp_decimal: ".", kp_equal: "=", kp_separator: ","
+  };
+  const fcitxKeyDisplayAlias = {
+    bracket_l: "bracketleft",
+    bracket_r: "bracketright",
+    multiply: "asterisk",
+    add: "plus",
+    subtract: "minus",
+    tilde: "asciitilde"
+  };
+
+  function fcitxKeySymbol(code) {
+    const raw = String(code || "").trim();
+    if (!raw) return null;
+    const lower = raw.toLowerCase();
+    const normalized = fcitxKeyDisplayAlias[lower] || lower;
+    return fcitxKeySymbolMap[normalized] ?? fcitxKeySymbolMap[lower] ?? null;
+  }
+
   // ── Icon Theme ──
   const iconThemeKeySlots = [
     "keys.capslock.none", "keys.capslock.once", "keys.capslock.lock",
@@ -2738,7 +2769,9 @@
   function renderSelectors() {
     ensureSelection();
     const baseSelect = el("layout-base-select");
-    baseSelect.innerHTML = baseNames().map((k) => `<option value="${escapeAttr(k)}">${escapeHtml(k)}</option>`).join("");
+    baseSelect.innerHTML = baseNames()
+      .map((k) => `<option value="${escapeAttr(k)}">${escapeHtml(k)}</option>`)
+      .join("");
     baseSelect.value = state.selectedBase;
 
     const subSelect = el("layout-submode-select");
@@ -4457,16 +4490,35 @@
   function getMacroKeyDisplayName(code) {
     const raw = String(code || "").trim();
     if (!raw) return "未设置";
-    if (/^[A-Z0-9]$/.test(raw) || /^F\d+$/.test(raw)) return raw;
-    if (raw === "BackSpace") return "Backspace";
-    if (raw === "Page_Up") return "Page Up";
-    if (raw === "Page_Down") return "Page Down";
-    if (raw === "Scroll_Lock") return "Scroll Lock";
-    if (raw === "Caps_Lock") return "Caps Lock";
-    if (raw === "Num_Lock") return "Num Lock";
-    if (raw === "HomePage") return "Home Page";
-    if (raw.startsWith("XF86")) return raw.slice(4);
-    return raw.replace(/_/g, " ");
+    let name;
+    if (/^[A-Z0-9]$/.test(raw) || /^F\d+$/.test(raw)) {
+      name = raw;
+    } else if (raw === "BackSpace") {
+      name = "Backspace";
+    } else if (raw === "Page_Up") {
+      name = "Page Up";
+    } else if (raw === "Page_Down") {
+      name = "Page Down";
+    } else if (raw === "Scroll_Lock") {
+      name = "Scroll Lock";
+    } else if (raw === "Caps_Lock") {
+      name = "Caps Lock";
+    } else if (raw === "Num_Lock") {
+      name = "Num Lock";
+    } else if (raw === "HomePage") {
+      name = "Home Page";
+    } else if (raw.startsWith("XF86")) {
+      name = raw.slice(4);
+    } else {
+      name = raw.replace(/_/g, " ");
+    }
+    // Append the output character hint like the app's key picker (e.g. Grave(`)).
+    const symbol = fcitxKeySymbol(raw);
+    if (symbol) {
+      const display = name.charAt(0).toUpperCase() + name.slice(1);
+      return `${display} (${symbol})`;
+    }
+    return name;
   }
 
   function addMacroEventStep() {
