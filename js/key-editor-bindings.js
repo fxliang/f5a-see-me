@@ -34,7 +34,7 @@
       saveKeyJsonDialog
     } = deps;
 
-    ["layout-key-type", "layout-key-main", "layout-key-alt", "layout-key-label", "layout-key-sub-label", "layout-key-weight", "layout-key-row-height"].forEach((id) => {
+    ["layout-key-type", "layout-key-main", "layout-key-alt", "layout-key-label", "layout-key-sub-label", "layout-key-weight", "layout-key-row-height", "layout-key-numpad-sym", "layout-key-switch-target"].forEach((id) => {
       el(id).addEventListener("input", () => {
         try {
           updateDraftFromMainFields();
@@ -44,11 +44,11 @@
           setStatus("layout-key-dialog-status", `输入无效：${err.message}`, "err");
         }
       });
-      if (id === "layout-key-type") {
+      if (id === "layout-key-type" || id === "layout-key-numpad-sym" || id === "layout-key-switch-target") {
         el(id).addEventListener("change", () => {
           try {
             updateDraftFromMainFields();
-            updateKeyDialogFieldVisibility(el("layout-key-type").value);
+            if (id === "layout-key-type") updateKeyDialogFieldVisibility(el("layout-key-type").value);
             setStatus("layout-key-dialog-status", "", "");
           } catch (err) {
             setStatus("layout-key-dialog-status", `输入无效：${err.message}`, "err");
