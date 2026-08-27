@@ -82,8 +82,77 @@
 
   const keyTypes = [
     "AlphabetKey", "CapsKey", "LayoutSwitchKey", "CommaKey", "LanguageKey",
-    "SpaceKey", "SymbolKey", "ReturnKey", "BackspaceKey", "MacroKey"
+    "SpaceKey", "SymbolKey", "ReturnKey", "BackspaceKey", "MacroKey",
+    "NumPadKey", "MiniSpaceKey"
   ];
+
+  // NumPadKey 符号选项（label 为按键显示，sym 为保存到 JSON 的规范 Fcitx 键名），
+  // 与 fcitx5-android 编辑器（KeyboardEditorUiBuilder.NUMPAD_OPTIONS）一致。
+  const numpadSymOptions = [
+    { label: "0", sym: "KP_0" }, { label: "1", sym: "KP_1" }, { label: "2", sym: "KP_2" },
+    { label: "3", sym: "KP_3" }, { label: "4", sym: "KP_4" }, { label: "5", sym: "KP_5" },
+    { label: "6", sym: "KP_6" }, { label: "7", sym: "KP_7" }, { label: "8", sym: "KP_8" },
+    { label: "9", sym: "KP_9" },
+    { label: "+", sym: "KP_Add" }, { label: "-", sym: "KP_Subtract" },
+    { label: "*", sym: "KP_Multiply" }, { label: "/", sym: "KP_Divide" },
+    { label: ",", sym: "KP_Separator" }, { label: ".", sym: "KP_Decimal" },
+    { label: "=", sym: "KP_Equal" }
+  ];
+
+  // LayoutSwitchKey 切换目标（存于 subLabel），与 app 内 SWITCH_TARGET_OPTIONS 一致。
+  const switchTargetOptions = [
+    { value: "", label: "默认（?123 符号面板）" },
+    { value: "Text", label: "Text（文本键盘）" },
+    { value: "Number", label: "Number（数字键盘）" },
+    { value: "Symbol", label: "Symbol（符号面板）" }
+  ];
+
+  // 数字键盘 keysym 与规范键名双向表（与 app 的 SYM_CODE_TO_NAME / SYM_NAME_TO_CODE 一致）
+  const numpadSymNameByCode = {};
+  for (let i = 0; i <= 9; i++) numpadSymNameByCode[0xffb0 + i] = `KP_${i}`;
+  numpadSymNameByCode[0xffab] = "KP_Add";
+  numpadSymNameByCode[0xffad] = "KP_Subtract";
+  numpadSymNameByCode[0xffaa] = "KP_Multiply";
+  numpadSymNameByCode[0xffaf] = "KP_Divide";
+  numpadSymNameByCode[0xffae] = "KP_Decimal";
+  numpadSymNameByCode[0xffac] = "KP_Separator";
+  numpadSymNameByCode[0xffbd] = "KP_Equal";
+  numpadSymNameByCode[0xff8d] = "KP_Enter";
+  const numpadSymCanonicalByName = Object.fromEntries(
+    Object.entries(numpadSymNameByCode).map(([code, name]) => [name.toLowerCase(), name])
+  );
+  const numpadSymLabelByName = Object.fromEntries(
+    numpadSymOptions.map((o) => [o.sym, o.label])
+  );
+  const numpadSymNameByLabel = Object.fromEntries(
+    numpadSymOptions.map((o) => [o.label, o.sym])
+  );
+
+  /**
+   * 将 sym 字段解析为规范键名（如 "KP_2"）。兼容：规范名、大小写不敏感名、
+   * 十进制/十六进制 keysym、符号标签（"2"、"+"、","）。解析失败返回 null。
+   */
+  function resolveNumpadSymName(input) {
+    if (input == null) return null;
+    const s = String(input).trim();
+    if (!s) return null;
+    const canonical = numpadSymCanonicalByName[s.toLowerCase()];
+    if (canonical) return canonical;
+    if (numpadSymNameByLabel[s] != null) return numpadSymNameByLabel[s];
+    if (/^\d+$/.test(s)) {
+      const name = numpadSymNameByCode[Number.parseInt(s, 10)];
+      if (name) return name;
+    }
+    if (/^0x[0-9a-f]+$/i.test(s)) {
+      const name = numpadSymNameByCode[Number.parseInt(s.slice(2), 16)];
+      if (name) return name;
+    }
+    if (/^#[0-9a-f]+$/i.test(s)) {
+      const name = numpadSymNameByCode[Number.parseInt(s.slice(1), 16)];
+      if (name) return name;
+    }
+    return null;
+  }
 
   const keyColorFields = [
     { customKey: "textColor", monetKey: "textColorMonet", label: "文字颜色" },
@@ -302,6 +371,37 @@
     "XF86Find", "Execute", "Help", "Setup", "Options", "Info", "Time",
     "Market", "Go", "Off", "Shop"
   ];
+
+  // Fcitx key name -> output symbol hints, mirroring the fcitx5-android app's
+  // MacroEditorActivity SYMBOL_KEY_MAP (lookup is case-insensitive).
+  const fcitxKeySymbolMap = {
+    exclam: "!", at: "@", numbersign: "#", dollar: "$", percent: "%",
+    asciicircum: "^", ampersand: "&", asterisk: "*", parenleft: "(", parenright: ")",
+    minus: "-", underscore: "_", equal: "=", plus: "+",
+    bracketleft: "[", braceleft: "{", bracketright: "]", braceright: "}",
+    backslash: "\\", bar: "|", semicolon: ";", colon: ":", apostrophe: "'",
+    quotedbl: "\"", grave: "`", asciitilde: "~", comma: ",", less: "<",
+    period: ".", greater: ">", slash: "/", question: "?",
+    multiply: "*", add: "+", subtract: "-", divide: "÷", separator: ",",
+    kp_multiply: "*", kp_add: "+", kp_subtract: "-", kp_divide: "÷",
+    kp_decimal: ".", kp_equal: "=", kp_separator: ","
+  };
+  const fcitxKeyDisplayAlias = {
+    bracket_l: "bracketleft",
+    bracket_r: "bracketright",
+    multiply: "asterisk",
+    add: "plus",
+    subtract: "minus",
+    tilde: "asciitilde"
+  };
+
+  function fcitxKeySymbol(code) {
+    const raw = String(code || "").trim();
+    if (!raw) return null;
+    const lower = raw.toLowerCase();
+    const normalized = fcitxKeyDisplayAlias[lower] || lower;
+    return fcitxKeySymbolMap[normalized] ?? fcitxKeySymbolMap[lower] ?? null;
+  }
 
   // ── Icon Theme ──
   const iconThemeKeySlots = [
@@ -2606,6 +2706,9 @@
   function normalizeKeyFieldsForType(key) {
     const type = String(key?.type || "").trim();
     const c = keyTypeCapabilities(type);
+    // NumPadKey accepts legacy/manual JSON with only a label (for example "2").
+    // Preserve that source before the generic non-label cleanup below.
+    const numpadSource = c.hasNumpadSym ? (key.sym ?? key.label) : null;
     if (!c.hasMainAlt) {
       delete key.main;
       delete key.alt;
@@ -2621,6 +2724,15 @@
     if (!c.hasTapAction) delete key.tap;
     if (!c.hasSwipeAction) delete key.swipe;
     if (!c.hasLongPressAction) delete key.longPress;
+    if (!c.hasNumpadSym) delete key.sym;
+    if (c.hasNumpadSym) {
+      // 与 app 一致：sym 规范化为键名（如 KP_2）；label 缺省时由 sym 反推显示字符
+      const resolved = resolveNumpadSymName(numpadSource) || "KP_0";
+      key.sym = resolved;
+      if (!key.label || typeof key.label !== "string" || !key.label.trim()) {
+        key.label = numpadSymLabelByName[resolved] || "0";
+      }
+    }
 
     const availableColorKeys = new Set();
     availableColorFieldsForType(type).forEach((field) => {
@@ -2675,6 +2787,8 @@
       case "SymbolKey": return key.label || ".";
       case "ReturnKey": return "↵";
       case "BackspaceKey": return "⌫";
+      case "NumPadKey": return key.label || "0";
+      case "MiniSpaceKey": return "␣";
       case "AlphabetKey": return key.main || "?";
       case "MacroKey": return key.label || "M";
       default:
@@ -2695,6 +2809,8 @@
         case "SymbolKey": return key.label || ".";
         case "ReturnKey": return "Enter";
         case "BackspaceKey": return "⌫";
+        case "NumPadKey": return key.label || "0";
+        case "MiniSpaceKey": return "Space";
         case "AlphabetKey": return key.main || "?";
         case "MacroKey": return key.label || "M";
         default: return key.type;
@@ -2738,7 +2854,9 @@
   function renderSelectors() {
     ensureSelection();
     const baseSelect = el("layout-base-select");
-    baseSelect.innerHTML = baseNames().map((k) => `<option value="${escapeAttr(k)}">${escapeHtml(k)}</option>`).join("");
+    baseSelect.innerHTML = baseNames()
+      .map((k) => `<option value="${escapeAttr(k)}">${escapeHtml(k)}</option>`)
+      .join("");
     baseSelect.value = state.selectedBase;
 
     const subSelect = el("layout-submode-select");
@@ -3101,7 +3219,10 @@
       case "AlphabetKey":
       case "SymbolKey":
       case "MacroKey":
+      case "NumPadKey":
         return 0.1;
+      case "MiniSpaceKey":
+        return 0.15;
       default:
         return 0.1;
     }
@@ -3139,6 +3260,7 @@
         classes.push("alt-key");
         break;
       case "SpaceKey":
+      case "MiniSpaceKey":
         classes.push("space-key");
         break;
       case "ReturnKey":
@@ -3814,7 +3936,10 @@
       hasMacroLabels: type === "MacroKey",
       hasTapAction: type === "MacroKey",
       hasSwipeAction: type === "MacroKey" || swipeTypes.has(type),
-      hasLongPressAction: type === "MacroKey"
+      hasLongPressAction: type === "MacroKey",
+      // NumPadKey：数字符号下拉（label + sym）；LayoutSwitchKey：切换目标下拉（subLabel）
+      hasNumpadSym: type === "NumPadKey",
+      hasSwitchTarget: type === "LayoutSwitchKey"
     };
   }
 
@@ -3830,6 +3955,18 @@
     el("layout-key-sub-label").value = key.subLabel || "";
     el("layout-key-weight").value = key.weight == null ? "" : String(key.weight);
     el("layout-key-row-height").value = key.rowHeightPercent == null ? "" : String(key.rowHeightPercent);
+    const numpadSel = el("layout-key-numpad-sym");
+    numpadSel.innerHTML = numpadSymOptions
+      .map((o) => `<option value="${escapeAttr(o.sym)}">${escapeHtml(o.label)}</option>`)
+      .join("");
+    const symName = resolveNumpadSymName(key.sym ?? key.label) || "KP_0";
+    numpadSel.value = numpadSymOptions.some((o) => o.sym === symName) ? symName : "KP_0";
+    const targetSel = el("layout-key-switch-target");
+    targetSel.innerHTML = switchTargetOptions
+      .map((o) => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}</option>`)
+      .join("");
+    targetSel.value = switchTargetOptions.some((o) => o.value === (key.subLabel || ""))
+      ? (key.subLabel || "") : "";
     updateKeyDialogFieldVisibility(type);
     syncComposeInlineUi();
     refreshKeyDialogSummaries();
@@ -3845,6 +3982,8 @@
     document.querySelectorAll(".key-basic-main, .key-basic-alt").forEach((node) => { node.hidden = !c.hasMainAlt; });
     document.querySelectorAll(".key-basic-label").forEach((node) => { node.hidden = !c.hasLabel; });
     document.querySelectorAll(".key-basic-sublabel").forEach((node) => { node.hidden = !c.hasEditableSubLabel; });
+    document.querySelectorAll(".key-basic-numpad-sym").forEach((node) => { node.hidden = !c.hasNumpadSym; });
+    document.querySelectorAll(".key-basic-switch-target").forEach((node) => { node.hidden = !c.hasSwitchTarget; });
     document.querySelectorAll(".key-basic-weight, .key-basic-row-height").forEach((node) => { node.hidden = inComposeEdit; });
     const mainInput = el("layout-key-main");
     const altInput = el("layout-key-alt");
@@ -3963,6 +4102,18 @@
     }
     if (c.hasEditableSubLabel) {
       if (subLabel.trim()) key.subLabel = subLabel;
+      else delete key.subLabel;
+    }
+    if (c.hasNumpadSym) {
+      const numpadSel = el("layout-key-numpad-sym");
+      const opt = numpadSymOptions.find((o) => o.sym === numpadSel.value) || numpadSymOptions[0];
+      key.sym = opt.sym;
+      key.label = opt.label;
+    }
+    if (c.hasSwitchTarget) {
+      const targetSel = el("layout-key-switch-target");
+      const value = String(targetSel.value || "").trim();
+      if (value) key.subLabel = value;
       else delete key.subLabel;
     }
     if (inComposeEdit) {
@@ -4457,16 +4608,35 @@
   function getMacroKeyDisplayName(code) {
     const raw = String(code || "").trim();
     if (!raw) return "未设置";
-    if (/^[A-Z0-9]$/.test(raw) || /^F\d+$/.test(raw)) return raw;
-    if (raw === "BackSpace") return "Backspace";
-    if (raw === "Page_Up") return "Page Up";
-    if (raw === "Page_Down") return "Page Down";
-    if (raw === "Scroll_Lock") return "Scroll Lock";
-    if (raw === "Caps_Lock") return "Caps Lock";
-    if (raw === "Num_Lock") return "Num Lock";
-    if (raw === "HomePage") return "Home Page";
-    if (raw.startsWith("XF86")) return raw.slice(4);
-    return raw.replace(/_/g, " ");
+    let name;
+    if (/^[A-Z0-9]$/.test(raw) || /^F\d+$/.test(raw)) {
+      name = raw;
+    } else if (raw === "BackSpace") {
+      name = "Backspace";
+    } else if (raw === "Page_Up") {
+      name = "Page Up";
+    } else if (raw === "Page_Down") {
+      name = "Page Down";
+    } else if (raw === "Scroll_Lock") {
+      name = "Scroll Lock";
+    } else if (raw === "Caps_Lock") {
+      name = "Caps Lock";
+    } else if (raw === "Num_Lock") {
+      name = "Num Lock";
+    } else if (raw === "HomePage") {
+      name = "Home Page";
+    } else if (raw.startsWith("XF86")) {
+      name = raw.slice(4);
+    } else {
+      name = raw.replace(/_/g, " ");
+    }
+    // Append the output character hint like the app's key picker (e.g. Grave(`)).
+    const symbol = fcitxKeySymbol(raw);
+    if (symbol) {
+      const display = name.charAt(0).toUpperCase() + name.slice(1);
+      return `${display} (${symbol})`;
+    }
+    return name;
   }
 
   function addMacroEventStep() {
