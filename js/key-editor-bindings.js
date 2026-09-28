@@ -58,7 +58,11 @@
     });
     el("layout-key-save").addEventListener("click", saveLayoutKeyDialog);
     el("layout-key-delete").addEventListener("click", () => {
-      deleteKey(keyDialogState.rowIndex, keyDialogState.keyIndex);
+      if (typeof keyDialogState.auxBarKeyIndex === "number" && keyDialogState.auxBarKeyIndex >= 0) {
+        deleteAuxBarKey(keyDialogState.auxBarKeyIndex);
+      } else {
+        deleteKey(keyDialogState.rowIndex, keyDialogState.keyIndex);
+      }
       el("layout-key-dialog").close();
     });
     el("layout-key-cancel").addEventListener("click", handleKeyDialogCancel);

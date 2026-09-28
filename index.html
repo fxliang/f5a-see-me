@@ -71,6 +71,10 @@
                   <label>当前布局专用高度百分比（10..90，空为默认）</label>
                   <input id="layout-height-override" type="number" min="10" max="90" step="1">
                 </div>
+                <div class="form-row form-inline">
+                  <label>辅助选择栏（写入 aux_bar 元数据）</label>
+                  <button id="layout-open-aux-bar" type="button">辅助选择栏…</button>
+                </div>
               </div>
             </details>
 
@@ -530,6 +534,34 @@
     </form>
   </dialog>
 
+  <dialog id="layout-aux-bar-dialog" class="editor-dialog sub-dialog">
+    <form method="dialog" class="editor-form" onsubmit="return false;">
+      <div class="dialog-titlebar"><h3>辅助选择栏：<span id="layout-aux-bar-target"></span></h3></div>
+      <div class="form-row form-inline">
+        <label for="layout-aux-bar-position">位置</label>
+        <select id="layout-aux-bar-position"></select>
+      </div>
+      <div class="form-row form-inline">
+        <label for="layout-aux-bar-size" id="layout-aux-bar-size-label">宽度/高度</label>
+        <input id="layout-aux-bar-size" type="range" min="5" max="95" step="1">
+        <span id="layout-aux-bar-size-value" class="status">15%</span>
+      </div>
+      <div class="form-row">
+        <div id="layout-aux-bar-keys-section">
+          <label>辅助栏按键（无标签页时显示，点击编辑，右键删除）</label>
+          <div id="layout-aux-bar-key-list" class="chip-list aux-bar-key-list"></div>
+          <div id="layout-aux-bar-keys-empty" class="status">暂无辅助栏按键，点击 + 添加。</div>
+        </div>
+        <div id="layout-aux-bar-keys-hint" class="status" hidden>预编辑上方模式：辅助栏内容显示在预编辑区上方，由运行时的候选标签页决定。</div>
+      </div>
+      <div class="status" id="layout-aux-bar-status"></div>
+      <div class="toolbar">
+        <button type="button" id="layout-aux-bar-cancel">取消</button>
+        <button type="button" id="layout-aux-bar-save">保存</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="theme-qr-dialog" class="editor-dialog sub-dialog qr-preview-dialog">
     <form method="dialog" class="editor-form">
       <div class="dialog-titlebar"><h3>主题二维码预览</h3></div>
@@ -645,7 +677,7 @@
   <script defer src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
   <script src="./js/qr-import.js?v=20260520113600"></script>
   <script src="./js/jscolor/jscolor.js?v=20260520113600"></script>
-  <script src="./js/key-editor-bindings.js?v=20260520113600"></script>
-  <script src="./js/app.js?v=20260811154329"></script>
+  <script src="./js/key-editor-bindings.js?v=20260926000000"></script>
+  <script src="./js/app.js?v=20260926000000"></script>
 </body>
 </html>

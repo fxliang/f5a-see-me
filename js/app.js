@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-08-11T15:43+08:00";
+  const WEB_EDITOR_BUILD = "2026-09-15T00:00+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -20,6 +20,8 @@
   const DEFAULT_SUBMODE = "default";
   const META_KEY = "__meta__";
   const HEIGHT_KEY = "keyboard_height_percent";
+  const AUX_BAR_KEY = "aux_bar";
+  const AUX_BAR_POSITIONS = ["top", "bottom", "left", "right", "above_preedit"];
   const PREVIEW_KEY_BORDER_ENABLED = false;
 
   function resolveImeApiBase() {
@@ -559,7 +561,7 @@
     initialIconThemeCatalogSignature: "",
   };
 
-  const keyDialogState = { rowIndex: -1, keyIndex: -1, draft: null };
+  const keyDialogState = { rowIndex: -1, keyIndex: -1, draft: null, auxBarMode: false, auxBarKeyIndex: -1 };
   const gradientDialogState = { anchors: [] };
   const crcTable = buildCrc32Table();
 
@@ -2747,13 +2749,147 @@
 
   function validateMeta(meta, name) {
     if (meta == null) return;
-    if (typeof meta !== "object" || Array.isArray(meta)) throw new Error(`布局 ${name} 的 __meta__ 必须是对象`);
+    if (typeof meta !== "object" || Array.isArray(meta)) throw new Error(`布局 ${name} 的 ${META_KEY} 必须是对象`);
     const n = meta[HEIGHT_KEY];
-    if (n == null) return;
-    if (!Number.isInteger(Number(n)) || Number(n) < 10 || Number(n) > 90) {
-      throw new Error(`布局 ${name} 的 ${HEIGHT_KEY} 必须是 10..90`);
+    if (n != null) {
+      if (!Number.isInteger(Number(n)) || Number(n) < 10 || Number(n) > 90) {
+        throw new Error(`布局 ${name} 的 ${HEIGHT_KEY} 必须是 10..90`);
+      }
+      meta[HEIGHT_KEY] = Number(n);
     }
-    meta[HEIGHT_KEY] = Number(n);
+    validateAuxBarMeta(meta[AUX_BAR_KEY], name);
+  }
+
+  function validateAuxBarMeta(auxBar, name) {
+    if (auxBar == null) return;
+    if (typeof auxBar !== "object" || Array.isArray(auxBar)) {
+      throw new Error(`布局 ${name} 的 ${AUX_BAR_KEY} 必须是对象`);
+    }
+    const position = auxBar.position;
+    if (position != null && !AUX_BAR_POSITIONS.includes(position)) {
+      throw new Error(`布局 ${name} 的 ${AUX_BAR_KEY}.position 必须是 ${AUX_BAR_POSITIONS.join("/")}`);
+    }
+    if (position == null && auxBar.keys == null) {
+      throw new Error(`布局 ${name} 的 ${AUX_BAR_KEY} 缺少 position 或 keys`);
+    }
+    const size = auxBar.size_percent;
+    if (position != null && position !== "above_preedit") {
+      if (!Number.isFinite(Number(size)) || Number(size) < 5 || Number(size) > 95) {
+        throw new Error(`布局 ${name} 的 ${AUX_BAR_KEY}.size_percent 必须是 5..95`);
+      }
+    }
+    if (auxBar.keys != null) {
+      const normalizedKeys = normalizeAuxBarKeys(auxBar);
+      if (!normalizedKeys.length) {
+        throw new Error(`布局 ${name} 的 ${AUX_BAR_KEY}.keys 必须是按键数组（单行嵌套或扁平）`);
+      }
+      normalizedKeys.forEach((key, ki) => {
+        if (!key || typeof key !== "object" || Array.isArray(key)) {
+          throw new Error(`布局 ${name} 的 ${AUX_BAR_KEY}.keys 第 ${ki + 1} 个按键不是对象`);
+        }
+        normalizeKeyFieldsForType(key);
+        if (key.rowHeightPercent != null) normalizeRowHeightKey(key);
+      });
+    }
+  }
+
+  function normalizeAuxBarKeys(auxBar) {
+    if (!Array.isArray(auxBar.keys) || !auxBar.keys.length) return [];
+    if (auxBar.keys.every((k) => Array.isArray(k))) {
+      // App JSON 形态：keys: [[...keys...]]（单行，元素为行数组）
+      return deepClone(auxBar.keys[0]).map((key) => (key && typeof key === "object" ? key : {}));
+    }
+    if (auxBar.keys.every((key) => key && typeof key === "object" && !Array.isArray(key))) {
+      // 扁平形态：keys: [...keys...]
+      return deepClone(auxBar.keys);
+    }
+    return [];
+  }
+
+  function normalizeAuxBarMeta(auxBar) {
+    if (!auxBar || typeof auxBar !== "object" || Array.isArray(auxBar)) return null;
+    const position = AUX_BAR_POSITIONS.includes(auxBar.position) ? auxBar.position : null;
+    const keys = normalizeAuxBarKeys(auxBar);
+    if (!position && !keys.length) return null;
+    const out = {};
+    if (position) {
+      out.position = position;
+      if (position === "above_preedit") {
+        out.size_percent = 0;
+      } else {
+        const size = Number(auxBar.size_percent);
+        out.size_percent = Number.isFinite(size) ? Math.min(95, Math.max(5, size)) : 15;
+      }
+    }
+    if (keys.length) out.keys = keys;
+    return out;
+  }
+
+  function getAuxBarMeta(base = state.selectedBase, submode = state.selectedSubmode, create = false) {
+    const meta = getMetaContainer(base, submode, create);
+    if (!meta) return null;
+    if (!meta[AUX_BAR_KEY]) {
+      if (!create) return null;
+      meta[AUX_BAR_KEY] = {};
+    }
+    return meta[AUX_BAR_KEY];
+  }
+
+  function getAuxBarConfig(base = state.selectedBase, submode = state.selectedSubmode) {
+    const meta = getMetaContainer(base, submode, false);
+    const auxBar = meta?.[AUX_BAR_KEY];
+    const normalized = normalizeAuxBarMeta(auxBar);
+    return normalized && normalized.position ? { position: normalized.position, sizePercent: normalized.size_percent } : null;
+  }
+
+  function setAuxBarConfig(base, submode, config) {
+    if (!config || !AUX_BAR_POSITIONS.includes(config.position)) {
+      // 清除位置配置：若存在自定义按键则以 keys-only 形态保留（与 App 行为一致）
+      const keys = getAuxBarKeys(base, submode);
+      if (keys.length) {
+        const meta = getMetaContainer(base, submode, true);
+        // 统一存储为单行嵌套形态 keys: [[...]]
+        meta[AUX_BAR_KEY] = { keys: [deepClone(keys)] };
+      } else {
+        const meta = getMetaContainer(base, submode, false);
+        if (meta) delete meta[AUX_BAR_KEY];
+      }
+      return;
+    }
+    const auxBar = getAuxBarMeta(base, submode, true);
+    const keepKeys = Array.isArray(auxBar.keys) && auxBar.keys.length ? deepClone(auxBar.keys) : null;
+    const normalized = normalizeAuxBarMeta({
+      position: config.position,
+      size_percent: config.position === "above_preedit" ? 0 : config.sizePercent,
+      keys: keepKeys
+    }) || { position: config.position };
+    delete auxBar.position;
+    delete auxBar.size_percent;
+    delete auxBar.keys;
+    Object.assign(auxBar, normalized);
+  }
+
+  function getAuxBarKeys(base = state.selectedBase, submode = state.selectedSubmode) {
+    const meta = getMetaContainer(base, submode, false);
+    const auxBar = meta?.[AUX_BAR_KEY];
+    const normalized = normalizeAuxBarMeta(auxBar);
+    return normalized?.keys || [];
+  }
+
+  function setAuxBarKeys(base, submode, keys) {
+    const auxBar = getAuxBarMeta(base, submode, true);
+    // 统一以 App 兼容的单行嵌套形态存储：keys: [[...]]
+    const flat = Array.isArray(keys) ? keys : [];
+    const cleanKeys = deepClone(flat).filter((key) => key && typeof key === "object" && !Array.isArray(key));
+    if (cleanKeys.length) {
+      auxBar.keys = [cleanKeys];
+    } else {
+      delete auxBar.keys;
+    }
+    if (!auxBar.position && !Array.isArray(auxBar.keys)) {
+      const meta = getMetaContainer(base, submode, false);
+      if (meta) delete meta[AUX_BAR_KEY];
+    }
   }
 
   function ensureSelection() {
@@ -2878,6 +3014,8 @@
   function renderLayoutPreview() {
     const rows = getRows();
     const rowPercents = resolveRowHeightPercents(rows);
+    const auxBarConfig = getAuxBarConfig();
+    const auxBarKeys = getAuxBarKeys();
     const root = el("layout-preview");
     const cfg = state.themeAppSync;
     const keyVGap = Math.max(0, Number(cfg.keyVGap) || 0);
@@ -2893,7 +3031,7 @@
     root.style.setProperty('--preview-side-padding', `${previewMetrics?.sidePadding || 0}px`);
     root.style.setProperty('--preview-bottom-padding', `${previewMetrics?.bottomPadding || 0}px`);
     root.style.setProperty('--preview-top-bar-height', `${previewMetrics?.topBarHeight || 0}px`);
-    root.innerHTML = rows.map((row, rowIndex) => {
+    const rowsHtml = rows.map((row, rowIndex) => {
       const rowHeight = previewContentHeight
         ? Math.max(28, Math.round(previewContentHeight * (rowPercents[rowIndex] || 0) / 100))
         : effectiveRowHeight(rowPercents[rowIndex] ?? 0);
@@ -2921,18 +3059,105 @@
         const alt = keySubText(key) && punctPlacement !== 'none'
           ? `<span class="layout-key-alt ${punctPlacement === 'bottom' ? 'bottom' : punctPlacement === 'top-center' ? 'top-center' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
           : "";
-        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
+        const previewEditTitle = `${key.type || "?"}。点击按键可直接编辑`;
+        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${keyIndex}" tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
       }).join("")}</div></div>`;
     }).join("");
+    root.innerHTML = buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg);
     requestAnimationFrame(() => {
       pinPreviewContainerWidth();
       syncPreviewBlurMaskGeometry();
       fitLayoutPreviewText();
     });
     const height = getHeightOverride();
-    setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${height ? `，键盘高度 ${height}%` : ""}`, "");
+    const auxMeta = auxBarConfig ? `，辅助选择栏 ${auxBarConfig.position}${auxBarConfig.position !== "above_preedit" ? ` ${Math.round(auxBarConfig.sizePercent)}%` : ""}` : "";
+    setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${height ? `，键盘高度 ${height}%` : ""}${auxMeta}`, "");
     renderThemeSupplementPreview();
     updateFixedChromeMetrics();
+  }
+
+  function buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg) {
+    if (!auxBarConfig) return rowsHtml;
+    const borderWidth = cfg.borderEnabled ? (cfg.borderOutline ? 1 : 0) : 0;
+    const keyStyleOf = (key) => {
+      const colors = resolvePreviewColorsForKey(key);
+      return `--preview-key-bg:${colors.backgroundCss};color:${colors.textCss};border-color:${colors.borderCss};--preview-key-shadow:${colors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
+    };
+    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${key.type || "?"}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span></div></div>`;
+    const auxKeysHtml = auxBarKeys.length
+      ? `<div class="keys aux-bar-keys">${auxBarKeys.map(chipOf).join("")}</div>`
+      : `<div class="aux-bar-placeholder">辅助选择栏（无按键，运行时显示候选标签页）</div>`;
+    const auxHtml = `<div class="aux-bar-preview aux-bar-${escapeAttr(auxBarConfig.position)}" style="--aux-bar-size:${auxBarConfig.sizePercent}%">${auxKeysHtml}</div>`;
+    const position = auxBarConfig.position;
+    if (position === "above_preedit") {
+      return `<div class="aux-bar-above-preedit">${auxHtml}</div>${rowsHtml}`;
+    }
+    if (position === "top") {
+      return `${auxHtml}${rowsHtml}`;
+    }
+    if (position === "bottom") {
+      return `${rowsHtml}${auxHtml}`;
+    }
+    if (position === "left") {
+      return `<div class="aux-bar-hwrap"><div class="aux-bar-vwrap aux-bar-left-v">${auxHtml}</div><div class="aux-bar-main">${rowsHtml}</div></div>`;
+    }
+    if (position === "right") {
+      return `<div class="aux-bar-hwrap"><div class="aux-bar-main">${rowsHtml}</div><div class="aux-bar-vwrap aux-bar-right-v">${auxHtml}</div></div>`;
+    }
+    return rowsHtml;
+  }
+
+  // Preview click-to-edit: open the existing key editor dialog for the
+  // preview key under the pointer. Runs once via delegation on
+  // #layout-preview, so re-renders (innerHTML) never duplicate listeners.
+  // Note: unlike the row-editor chips (which open on touch pointerup and
+  // must swallow the trailing compat click via layoutKeyDialogTouchOpenUntil),
+  // preview opens synchronously inside the click itself, so no compat click
+  // follows and the guard must NOT be armed — otherwise the user's first
+  // real click inside the dialog would be eaten on desktop.
+  function openPreviewKeyEditor(target) {
+    if (!target || typeof openKeyEditorDialog !== "function") return false;
+    const auxAttr = target.getAttribute("data-preview-aux-key");
+    if (auxAttr !== null && auxAttr !== "") {
+      const auxIndex = Number(auxAttr);
+      if (!Number.isInteger(auxIndex) || auxIndex < 0 || auxIndex >= getAuxBarKeys().length) return false;
+      openKeyEditorDialog(-1, -1, false, auxIndex);
+      return true;
+    }
+    const rowAttr = target.getAttribute("data-preview-row");
+    const keyAttr = target.getAttribute("data-preview-key");
+    if (rowAttr === null || keyAttr === null || rowAttr === "" || keyAttr === "") return false;
+    const rowIndex = Number(rowAttr);
+    const keyIndex = Number(keyAttr);
+    const rows = getRows();
+    if (!Number.isInteger(rowIndex) || !Number.isInteger(keyIndex)) return false;
+    if (!rows[rowIndex] || keyIndex < 0 || keyIndex >= rows[rowIndex].length) return false;
+    openKeyEditorDialog(rowIndex, keyIndex, false);
+    return true;
+  }
+
+  let previewKeyEditingBound = false;
+  function initPreviewKeyEditing() {
+    if (previewKeyEditingBound) return;
+    const root = el("layout-preview");
+    if (!root) return;
+    previewKeyEditingBound = true;
+    root.addEventListener("click", (ev) => {
+      if (ev.defaultPrevented) return;
+      if (typeof el === "function" && el("layout-key-dialog")?.open) return;
+      const target = ev.target?.closest?.("[data-preview-row][data-preview-key], [data-preview-aux-key]");
+      if (!target || !root.contains(target)) return;
+      if (ev.detail !== 0 && !isPointInsideElement(ev.clientX, ev.clientY, target)) return;
+      openPreviewKeyEditor(target);
+    });
+    root.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const target = ev.target?.closest?.("[data-preview-row][data-preview-key], [data-preview-aux-key]");
+      if (!target || !root.contains(target)) return;
+      if (typeof el === "function" && el("layout-key-dialog")?.open) return;
+      ev.preventDefault();
+      openPreviewKeyEditor(target);
+    });
   }
 
   function pinPreviewContainerWidth() {
@@ -3411,6 +3636,14 @@
     const rows = getRows();
     if (!rows[rowIndex] || keyIndex < 0 || keyIndex >= rows[rowIndex].length) return;
     rows[rowIndex].splice(keyIndex, 1);
+    syncLayoutUiFromState();
+  }
+
+  function deleteAuxBarKey(auxBarKeyIndex) {
+    const keys = getAuxBarKeys();
+    if (auxBarKeyIndex < 0 || auxBarKeyIndex >= keys.length) return;
+    keys.splice(auxBarKeyIndex, 1);
+    setAuxBarKeys(state.selectedBase, state.selectedSubmode, keys);
     syncLayoutUiFromState();
   }
 
@@ -3901,24 +4134,160 @@
   }
 
   function openLayoutKeyDialog(rowIndex, keyIndex, isNew) {
+    openKeyEditorDialog(rowIndex, keyIndex, isNew);
+  }
+
+  function openKeyEditorDialog(rowIndex, keyIndex, isNew, auxBarKeyIndex = -1) {
     try {
-      const rows = getRows();
-      const key = isNew ? { type: "AlphabetKey", main: "x", alt: "", weight: 0.1 } : deepClone(rows[rowIndex][keyIndex]);
+      const auxBarMode = auxBarKeyIndex >= 0 || (isNew && keyDialogState.auxBarMode && rowIndex === -1);
+      const key = isNew
+        ? (auxBarMode ? { type: "AlphabetKey", main: "x", alt: "" } : { type: "AlphabetKey", main: "x", alt: "", weight: 0.1 })
+        : deepClone(getEditingKeySource(rowIndex, keyIndex, auxBarKeyIndex));
       keyDialogState.rowIndex = rowIndex;
       keyDialogState.keyIndex = keyIndex;
+      keyDialogState.auxBarKeyIndex = auxBarKeyIndex;
+      keyDialogState.auxBarMode = auxBarMode;
       keyDialogState.draft = deepClone(key);
       el("layout-key-dialog-title").textContent = isNew ? "新增按键" : "编辑按键";
       populateMainKeyFieldsFromDraft();
       syncKeyDialogActionButtons();
-      el("layout-key-delete").disabled = isNew;
+      el("layout-key-delete").disabled = isNew && auxBarKeyIndex < 0;
       setStatus("layout-key-dialog-status", "", "");
       if (Date.now() < state.layoutKeyDialogTouchOpenUntil) {
         state.layoutKeyDialogConsumeNextClick = true;
       }
       el("layout-key-dialog").showModal();
     } catch (e) {
-      console.error("openLayoutKeyDialog failed", e);
+      console.error("openKeyEditorDialog failed", e);
       alert(`打开按键编辑器失败：${e.message}`);
+    }
+  }
+
+  function getEditingKeySource(rowIndex, keyIndex, auxBarKeyIndex = -1) {
+    if (auxBarKeyIndex >= 0) {
+      const keys = getAuxBarKeys();
+      return keys[auxBarKeyIndex] || { type: "AlphabetKey", main: "x", alt: "" };
+    }
+    const rows = getRows();
+    return rows[rowIndex][keyIndex];
+  }
+
+  const AUX_BAR_DIALOG_POSITIONS = [
+    { value: "", label: "无" },
+    { value: "left", label: "左侧" },
+    { value: "right", label: "右侧" },
+    { value: "top", label: "顶部" },
+    { value: "bottom", label: "底部" },
+    { value: "above_preedit", label: "预编辑上方" }
+  ];
+
+  function openAuxBarDialog() {
+    try {
+      const base = state.selectedBase;
+      const submode = state.selectedSubmode;
+      const config = getAuxBarConfig(base, submode);
+      const positionSelect = el("layout-aux-bar-position");
+      positionSelect.innerHTML = AUX_BAR_DIALOG_POSITIONS
+        .map((o) => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}</option>`)
+        .join("");
+      positionSelect.value = AUX_BAR_DIALOG_POSITIONS.some((o) => o.value === (config?.position || ""))
+        ? (config?.position || "") : "";
+      const sizeRange = el("layout-aux-bar-size");
+      const sizeValue = el("layout-aux-bar-size-value");
+      const sizePct = Math.round(Number(config?.sizePercent) || 15);
+      sizeRange.value = String(Math.min(95, Math.max(5, sizePct)));
+      sizeValue.textContent = `${sizeRange.value}%`;
+      el("layout-aux-bar-target").textContent = entryKey(base, submode);
+      renderAuxBarKeyChips();
+      updateAuxBarDialogFieldVisibility();
+      setStatus("layout-aux-bar-status", "", "");
+      el("layout-aux-bar-dialog").showModal();
+    } catch (e) {
+      console.error("openAuxBarDialog failed", e);
+      alert(`打开辅助选择栏设置失败：${e.message}`);
+    }
+  }
+
+  function updateAuxBarDialogFieldVisibility() {
+    const position = el("layout-aux-bar-position").value;
+    const showSize = !!position && position !== "above_preedit";
+    ["layout-aux-bar-size", "layout-aux-bar-size-value"].forEach((id) => {
+      const node = el(id);
+      if (node) node.disabled = !showSize;
+    });
+    const sizeLabel = el("layout-aux-bar-size-label");
+    if (sizeLabel) sizeLabel.classList.toggle("dimmed", !showSize);
+    const keysSection = el("layout-aux-bar-keys-section");
+    if (keysSection) keysSection.hidden = !position || position === "above_preedit";
+    const keysHint = el("layout-aux-bar-keys-hint");
+    if (keysHint) keysHint.hidden = !!position && position !== "above_preedit";
+  }
+
+  function renderAuxBarKeyChips() {
+    const wrap = el("layout-aux-bar-key-list");
+    if (!wrap) return;
+    const keys = getAuxBarKeys();
+    wrap.innerHTML = "";
+    keys.forEach((key, index) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = `layout-chip aux-bar-chip ${keyVariantClass(key)}`;
+      chip.style.cssText = keyVariantStyle(key);
+      chip.innerHTML = `<span class="chip-main">${escapeHtml(editorKeyLabel(key))}</span>`;
+      chip.title = `${key.type || "?"}。点击编辑，右键删除`;
+      chip.addEventListener("click", () => {
+        state.layoutKeyDialogTouchOpenUntil = Date.now() + 1000;
+        openKeyEditorDialog(-1, -1, false, index);
+      });
+      chip.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        if (!confirm(`删除辅助栏按键「${editorKeyLabel(key)}」？`)) return;
+        deleteAuxBarKey(index);
+        renderAuxBarKeyChips();
+      });
+      wrap.appendChild(chip);
+    });
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "layout-chip aux-bar-chip aux-bar-chip-add";
+    add.innerHTML = `<span class="chip-main">+</span>`;
+    add.title = "新增辅助栏按键";
+    add.addEventListener("click", () => {
+      state.layoutKeyDialogTouchOpenUntil = Date.now() + 1000;
+      keyDialogState.auxBarMode = true;
+      openKeyEditorDialog(-1, -1, true, -1);
+    });
+    wrap.appendChild(add);
+    const empty = el("layout-aux-bar-keys-empty");
+    if (empty) empty.hidden = keys.length > 0;
+  }
+
+  function saveAuxBarDialog() {
+    try {
+      const base = state.selectedBase;
+      const submode = state.selectedSubmode;
+      const position = el("layout-aux-bar-position").value;
+      const keys = getAuxBarKeys(base, submode);
+      if (!position && !keys.length) {
+        setAuxBarConfig(base, submode, null);
+      } else if (!position) {
+        const auxBar = getAuxBarMeta(base, submode, true);
+        delete auxBar.position;
+        delete auxBar.size_percent;
+        if (!Array.isArray(auxBar.keys)) {
+          const meta = getMetaContainer(base, submode, false);
+          if (meta) delete meta[AUX_BAR_KEY];
+        }
+      } else {
+        const sizePercent = position === "above_preedit"
+          ? 0
+          : Math.min(95, Math.max(5, Number(el("layout-aux-bar-size").value) || 15));
+        setAuxBarConfig(base, submode, { position, sizePercent });
+      }
+      el("layout-aux-bar-dialog").close();
+      syncLayoutUiFromState();
+    } catch (e) {
+      setStatus("layout-aux-bar-status", `保存失败：${e.message}`, "err");
     }
   }
 
@@ -3975,7 +4344,8 @@
   function updateKeyDialogFieldVisibility(type) {
     const c = keyTypeCapabilities(type);
     const inComposeEdit = !!state.composeNestedContext;
-    const canEditCompose = !inComposeEdit;
+    const inAuxBarEdit = keyDialogState.auxBarMode === true && keyDialogState.rowIndex === -1 && !inComposeEdit;
+    const canEditCompose = !inComposeEdit && !inAuxBarEdit;
     const showDisplay = c.hasDisplayText;
     const showLabels = c.hasSwipeLabel || c.hasMacroLabels;
     const showMacro = c.hasTapAction || c.hasSwipeAction || c.hasLongPressAction;
@@ -3984,7 +4354,7 @@
     document.querySelectorAll(".key-basic-sublabel").forEach((node) => { node.hidden = !c.hasEditableSubLabel; });
     document.querySelectorAll(".key-basic-numpad-sym").forEach((node) => { node.hidden = !c.hasNumpadSym; });
     document.querySelectorAll(".key-basic-switch-target").forEach((node) => { node.hidden = !c.hasSwitchTarget; });
-    document.querySelectorAll(".key-basic-weight, .key-basic-row-height").forEach((node) => { node.hidden = inComposeEdit; });
+    document.querySelectorAll(".key-basic-weight, .key-basic-row-height").forEach((node) => { node.hidden = inComposeEdit || inAuxBarEdit; });
     const mainInput = el("layout-key-main");
     const altInput = el("layout-key-alt");
     const labelInput = el("layout-key-label");
@@ -3995,8 +4365,8 @@
     if (altInput) altInput.disabled = !c.hasMainAlt;
     if (labelInput) labelInput.disabled = !c.hasLabel;
     if (subLabelInput) subLabelInput.disabled = !c.hasEditableSubLabel;
-    if (weightInput) weightInput.disabled = inComposeEdit;
-    if (rowHeightInput) rowHeightInput.disabled = inComposeEdit;
+    if (weightInput) weightInput.disabled = inComposeEdit || inAuxBarEdit;
+    if (rowHeightInput) rowHeightInput.disabled = inComposeEdit || inAuxBarEdit;
     const displayBtn = el("layout-key-open-display-text");
     const labelsBtn = el("layout-key-open-labels");
     const macroBtn = el("layout-key-open-macro");
@@ -4030,16 +4400,29 @@
       delete keyDialogState.draft.rowHeightPercent;
       delete keyDialogState.draft.composeOverride;
     }
+    if (inAuxBarEdit && keyDialogState.draft) {
+      delete keyDialogState.draft.weight;
+      delete keyDialogState.draft.rowHeightPercent;
+    }
     refreshKeyDialogSummaries();
     syncKeyDialogActionButtons();
   }
 
   function syncKeyDialogActionButtons() {
     const inComposeEdit = !!state.composeNestedContext;
+    const inAuxBarEdit = keyDialogState.auxBarMode === true
+      && (keyDialogState.auxBarKeyIndex ?? -1) >= -1
+      && !inComposeEdit
+      && keyDialogState.rowIndex === -1;
     const deleteBtn = el("layout-key-delete");
     const clearComposeBtn = el("layout-key-compose-clear");
-    if (deleteBtn) deleteBtn.hidden = inComposeEdit;
+    const composeOpenBtn = el("layout-key-open-compose");
+    if (deleteBtn) {
+      deleteBtn.hidden = inComposeEdit;
+      deleteBtn.textContent = inAuxBarEdit ? "删除辅助栏按键" : "删除按键";
+    }
     if (clearComposeBtn) clearComposeBtn.hidden = !inComposeEdit;
+    if (composeOpenBtn) composeOpenBtn.hidden = inAuxBarEdit || inComposeEdit;
   }
 
   function refreshKeyDialogSummaries() {
@@ -4071,6 +4454,11 @@
   function updateDraftFromMainFields() {
     if (!keyDialogState.draft) keyDialogState.draft = {};
     applyMainFieldsToDraft(keyDialogState.draft);
+    if (keyDialogState.auxBarMode === true && keyDialogState.rowIndex === -1 && !state.composeNestedContext) {
+      // 辅助栏按键与 App 一致：不参与行内权重/行高设置
+      delete keyDialogState.draft.weight;
+      delete keyDialogState.draft.rowHeightPercent;
+    }
     refreshKeyDialogSummaries();
   }
 
@@ -4170,6 +4558,21 @@
       }
       const rowIndex = keyDialogState.rowIndex;
       const keyIndex = keyDialogState.keyIndex;
+      const auxBarKeyIndex = keyDialogState.auxBarKeyIndex ?? -1;
+      if (auxBarKeyIndex >= 0 || keyDialogState.auxBarMode) {
+        updateDraftFromMainFields();
+        const key = deepClone(keyDialogState.draft || {});
+        normalizeRowHeightKey(key);
+        normalizeDraftForSaveByAppRules(key);
+        const keys = getAuxBarKeys();
+        if (auxBarKeyIndex >= 0 && auxBarKeyIndex < keys.length) keys[auxBarKeyIndex] = key;
+        else keys.push(key);
+        setAuxBarKeys(state.selectedBase, state.selectedSubmode, keys);
+        el("layout-key-dialog").close();
+        syncLayoutUiFromState();
+        renderAuxBarKeyChips();
+        return;
+      }
       const rows = getRows();
       if (!rows[rowIndex]) throw new Error("目标行不存在");
       updateDraftFromMainFields();
@@ -6116,6 +6519,14 @@
         renderSelectors();
       }
     });
+    el("layout-open-aux-bar").addEventListener("click", openAuxBarDialog);
+    el("layout-aux-bar-position").addEventListener("change", updateAuxBarDialogFieldVisibility);
+    const auxSizeRange = el("layout-aux-bar-size");
+    auxSizeRange.addEventListener("input", () => {
+      el("layout-aux-bar-size-value").textContent = `${auxSizeRange.value}%`;
+    });
+    el("layout-aux-bar-save").addEventListener("click", saveAuxBarDialog);
+    el("layout-aux-bar-cancel").addEventListener("click", () => el("layout-aux-bar-dialog").close());
     el("layout-add-layout").addEventListener("click", handlePrimaryAddLayout);
     el("layout-add-kind").addEventListener("change", syncAddDialogByKind);
     el("layout-add-dialog-save").addEventListener("click", () => {
@@ -6174,6 +6585,7 @@
         setStatus,
         keyDialogState,
         deleteKey,
+        deleteAuxBarKey,
         updateDraftFromMainFields,
         updateKeyDialogFieldVisibility,
         saveLayoutKeyDialog,
@@ -8802,6 +9214,7 @@
     installThemeCropInteractions();
     initTabs();
     initLayoutTab();
+    initPreviewKeyEditing();
     initThemeTab();
     initPopupTab();
     initIconThemeTab();
